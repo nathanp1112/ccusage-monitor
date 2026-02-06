@@ -1,0 +1,48 @@
+{
+  "name": "ccusage-lambda-server",
+  "version": "0.1.0",
+  "description": "AWS Lambda API server for CCUsage team monitoring",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "dev:lambda": "serverless offline",
+    "build": "tsup src/lambda.ts src/index.ts --format esm --dts --clean",
+    "build:lambda": "tsup src/lambda.ts src/aggregator.ts --format esm --clean",
+    "start": "node dist/index.js",
+    "deploy": "pnpm build:lambda && serverless deploy --aws-profile default --region ap-southeast-1",
+    "deploy:dev": "pnpm build:lambda && serverless deploy --stage dev --aws-profile default --region ap-southeast-1",
+    "deploy:prod": "pnpm build:lambda && serverless deploy --stage prod --aws-profile default --region ap-southeast-1",
+    "remove": "serverless remove --aws-profile default --region ap-southeast-1",
+    "remove:prod": "serverless remove --stage prod --aws-profile default --region ap-southeast-1",
+    "logs": "serverless logs -f api -t --aws-profile default --region ap-southeast-1",
+    "logs:aggregator": "serverless logs -f aggregator -t --aws-profile default --region ap-southeast-1",
+    "info": "serverless info --aws-profile default --region ap-southeast-1",
+    "invoke:aggregator": "serverless invoke -f aggregator --aws-profile default --region ap-southeast-1",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src/",
+    "test": "vitest run",
+    "test:e2e": "bash scripts/test-e2e.sh"
+  },
+  "dependencies": {
+    "@aws-sdk/client-lambda": "^3.975.0",
+    "@aws-sdk/client-s3": "^3.975.0",
+    "@hono/node-server": "^1.13.7",
+    "@hono/zod-validator": "^0.4.2",
+    "hono": "^4.6.14",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.16.0",
+    "dotenv": "^16.4.7",
+    "eslint": "^9.17.0",
+    "pg": "^8.17.2",
+    "serverless": "^4.4.9",
+    "serverless-offline": "^14.4.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

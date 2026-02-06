@@ -1,0 +1,208 @@
+# CCUsage Monitor - Serverless Framework Configuration
+# Architecture: Lambda API + S3 Storage + Pre-computed Views
+
+service: ccusage-monitor
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${opt:region, 'ap-southeast-1'}
+  stage: ${opt:stage, 'dev'}
+
+  # Lambda configuration
+  memorySize: 512
+  timeout: 29
+  architecture: x86_64
+
+  # Environment variables
+  environment:
+    NODE_ENV: production
+    BUCKET_NAME: ${self:custom.bucketName}
+    # CORS allowed origins - comma separated
+    ALLOWED_ORIGINS: ${self:custom.allowedOrigins.${self:provider.stage}, 'http://localhost:3000'}
+    # Aggregator function name for API trigger
+    AGGREGATOR_FUNCTION_NAME: ${self:service}-${self:provider.stage}-aggregator
+
+  # IAM permissions for S3 and Lambda invocation
+  iam:
+    role:
+      statements:
+        # S3 permissions for data storage
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+            - s3:ListBucket
+          Resource:
+            - arn:aws:s3:::${self:custom.bucketName}
+            - arn:aws:s3:::${self:custom.bucketName}/*
+        # Lambda invocation (for manual aggregator trigger)
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource:
+            - arn:aws:lambda:${self:provider.region}:*:function:${self:service}-${self:provider.stage}-aggregator
+
+# Built-in esbuild configuration (Serverless v4)
+build:
+  esbuild:
+    bundle: true
+    minify: false
+    sourcemap: false
+    target: node20
+    platform: node
+    format: esm
+
+# Lambda functions
+functions:
+  # API Lambda - handles sync and read requests
+  api:
+    handler: src/lambda.handler
+    description: CCUsage API - Sync and read endpoints
+    events:
+      - httpApi:
+          path: /api/{proxy+}
+          method: ANY
+      - httpApi:
+          path: /health
+          method: GET
+
+  # Aggregator Lambda - computes pre-computed views hourly
+  aggregator:
+    handler: src/aggregator.handler
+    description: CCUsage Aggregator - Compute pre-calculated views
+    memorySize: 1024
+    timeout: 300
+    events:
+      - schedule:
+          rate: rate(1 hour)
+          enabled: true
+          description: Trigger view aggregation hourly
+
+# S3 Bucket, CloudWatch, and other resources
+resources:
+  Resources:
+    # CloudWatch Log Groups with 30-day retention
+    ApiLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-api
+        RetentionInDays: 30
+
+    AggregatorLogGroup:
+      Type: AWS::Logs::LogGroup
+      Properties:
+        LogGroupName: /aws/lambda/${self:service}-${self:provider.stage}-aggregator
+        RetentionInDays: 30
+
+    # CloudWatch Alarm - Lambda API Errors
+    ApiErrorAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-api-errors
+        AlarmDescription: Alert when Lambda API has more than 5 errors in 5 minutes
+        MetricName: Errors
+        Namespace: AWS/Lambda
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 5
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:service}-${self:provider.stage}-api
+
+    # CloudWatch Alarm - Lambda Aggregator Errors
+    AggregatorErrorAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-aggregator-errors
+        AlarmDescription: Alert when Lambda Aggregator has errors
+        MetricName: Errors
+        Namespace: AWS/Lambda
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 1
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: FunctionName
+            Value: ${self:service}-${self:provider.stage}-aggregator
+
+    # CloudWatch Alarm - API Gateway 5xx Errors
+    ApiGateway5xxAlarm:
+      Type: AWS::CloudWatch::Alarm
+      Properties:
+        AlarmName: ${self:service}-${self:provider.stage}-api-5xx
+        AlarmDescription: Alert when API Gateway has more than 10 5xx errors in 5 minutes
+        MetricName: 5xx
+        Namespace: AWS/ApiGateway
+        Statistic: Sum
+        Period: 300
+        EvaluationPeriods: 1
+        Threshold: 10
+        ComparisonOperator: GreaterThanThreshold
+        Dimensions:
+          - Name: ApiId
+            Value: !Ref HttpApi
+
+    # S3 Data Bucket
+    DataBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: ${self:custom.bucketName}
+        # Server-side encryption (SSE-S3)
+        BucketEncryption:
+          ServerSideEncryptionConfiguration:
+            - ServerSideEncryptionByDefault:
+                SSEAlgorithm: AES256
+        # Block all public access
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+        # Enable versioning for data protection
+        VersioningConfiguration:
+          Status: Enabled
+        # Lifecycle rules
+        LifecycleConfiguration:
+          Rules:
+            - Id: DeleteOldSyncLogs
+              Prefix: sync-logs/
+              Status: Enabled
+              ExpirationInDays: 90
+
+  Outputs:
+    ApiEndpoint:
+      Description: API Gateway endpoint URL
+      Value: !Sub "https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+      Export:
+        Name: ${self:service}-${self:provider.stage}-ApiEndpoint
+    BucketName:
+      Description: S3 bucket name for data storage
+      Value: !Ref DataBucket
+      Export:
+        Name: ${self:service}-${self:provider.stage}-BucketName
+    BucketArn:
+      Description: S3 bucket ARN
+      Value: !GetAtt DataBucket.Arn
+      Export:
+        Name: ${self:service}-${self:provider.stage}-BucketArn
+
+# Plugins
+plugins:
+  - serverless-offline
+
+# Custom configuration
+custom:
+  bucketName: ccusage-data-${self:provider.stage}
+  # CORS allowed origins per stage
+  allowedOrigins:
+    dev: 'http://localhost:3000,http://127.0.0.1:3000,https://d1ohuii7czj4jp.cloudfront.net'
+    prod: 'https://d1ohuii7czj4jp.cloudfront.net'
+  serverless-offline:
+    httpPort: 3001
+    lambdaPort: 3002
+    noPrependStageInUrl: true
