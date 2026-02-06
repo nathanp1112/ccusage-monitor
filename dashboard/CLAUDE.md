@@ -103,42 +103,41 @@ src/
 │   ├── (dashboard)/       # Dashboard route group (sidebar + navbar)
 │   │   ├── page.tsx       # Dashboard home
 │   │   ├── dashboard-charts.tsx  # Charts with Treemap/Pie toggle
-│   │   ├── members/       # Members list & detail
-│   │   │   └── view/      # Member detail (?id=X query param)
+│   │   ├── members/       # Members list (detail via modal)
 │   │   └── reports/       # Reports page
 │   ├── layout.tsx         # Root layout (fonts, theme script)
 │   ├── providers.tsx      # QueryClient + ThemeProvider
 │   └── globals.css        # Tailwind + CSS variables
 ├── components/
 │   ├── charts/            # Recharts visualizations
-│   │   └── cost-treemap-chart.tsx  # Treemap for cost distribution
-│   ├── dashboard/         # Dashboard-specific (SummaryCard)
+│   ├── dashboard/         # Dashboard-specific (SummaryCard - legacy)
 │   ├── layout/            # Sidebar, Navbar
 │   ├── members/           # Member-specific components
-│   │   ├── member-card.tsx        # Member card for grid view
-│   │   ├── member-ranking-list.tsx # Ranking list with medals
-│   │   └── ranking-bar.tsx        # Progress bar component
-│   ├── shared/            # LoadingSpinner, ErrorFallback, ViewToggle
-│   │   └── view-toggle.tsx        # Generic tab-like toggle
+│   │   ├── member-card.tsx           # Member card for grid view
+│   │   ├── member-ranking-list.tsx   # Ranking list with medals
+│   │   ├── member-detail-content.tsx # Detail view content (for modal)
+│   │   ├── member-detail-charts.tsx  # Charts for detail view
+│   │   └── ranking-bar.tsx           # Progress bar component
+│   ├── shared/            # Reusable common components
+│   │   ├── page-header.tsx      # Title + description + back button
+│   │   ├── stats-bar.tsx        # Compact inline stats
+│   │   ├── stats-grid.tsx       # Card grid stats
+│   │   ├── controls-bar.tsx     # View toggle + sort container
+│   │   ├── empty-state.tsx      # "No data" display
+│   │   ├── error-state.tsx      # Error with retry
+│   │   ├── data-sheet.tsx       # Modal/sheet for detail views
+│   │   ├── tag-list.tsx         # Badge/tag list
+│   │   ├── view-toggle.tsx      # Tab-like toggle
+│   │   └── loading-spinner.tsx  # Loading states
 │   ├── theme/             # ThemeProvider, ThemeToggle
 │   └── ui/                # Radix-based primitives
+│       ├── button, card, select, input, tooltip, dropdown-menu
+│       ├── sheet.tsx      # Slide-over panel
+│       └── badge.tsx      # Tag/badge component
 ├── hooks/                 # Custom React hooks
-│   ├── use-dashboard.ts   # Dashboard data fetching
-│   ├── use-members.ts     # Members data fetching
-│   └── use-auth.ts        # Auth hooks (stub)
 ├── lib/                   # Utilities
-│   ├── api-client.ts      # HTTP client with ApiError
-│   ├── api-adapters.ts    # Lambda ↔ frontend transformations
-│   ├── calculations.ts    # Frontend totals calculation
-│   ├── member-utils.ts    # Member sorting, ranking, team totals
-│   ├── treemap-utils.ts   # Treemap data transformation
-│   ├── query-keys.ts      # TanStack Query key factory
-│   └── utils.ts           # Formatters (cn, formatCurrency, etc.)
-├── stores/
-│   └── ui-store.ts        # Zustand: sidebar state, date range
-└── types/
-    ├── api.ts             # API response types
-    └── members.ts         # Member view types, RankedMember, TeamTotals
+├── stores/                # Zustand stores
+└── types/                 # TypeScript types
 ```
 
 ## Key Files for Contributors
@@ -187,11 +186,15 @@ src/
 - **Ranking View**: List with medals for top 3, progress bars showing relative usage
 - **Cards View**: Grid of member cards with device info and last sync
 - **Chart View**: Treemap visualization of member distribution
+- **Detail Modal**: Click any member → slide-over sheet with full detail (no page navigation)
+- **Shareable URL**: `/members?detail=X` opens modal automatically
 
-### Member Detail (`/members/view?id=X`)
+### Member Detail (Modal in `/members`)
+- **Year-to-date Stats**: Cost, send tokens, receive tokens
 - **Period Selector**: Year/month buttons with heat map preview
 - **Monthly Summary**: Cost, tokens, requests for selected month
 - **Charts**: Daily cost trend, model distribution pie, daily token usage by model
+- **Models Used**: Tag list of models used by member
 
 ## Data Flow
 
@@ -224,27 +227,63 @@ User Action → TanStack Query hook → apiClient.get()
 
 ## Component Patterns
 
-### Summary Cards (Dashboard)
+### Common Components (use these for consistency)
+
+**Page Header** - Every page should use this:
 ```tsx
-<SummaryCard
-  title="Total Cost"
-  value={formatCurrency(cost)}
-  change={{ value: 5.2, trend: 'up' }}
-  icon={<DollarSign />}
-  valueClassName="font-mono"
+import { PageHeader } from '@/components/shared/page-header'
+<PageHeader title="Members" description="View usage details" />
+<PageHeader title="John Doe" description="john@example.com" backHref="/members" />
+```
+
+**Stats Grid** - For dashboard-style stat cards:
+```tsx
+import { StatsGrid, type StatCardItem } from '@/components/shared/stats-grid'
+const stats: StatCardItem[] = [
+  { title: 'Total Cost', value: '$500', icon: <DollarSign />, valueClassName: 'font-mono' },
+]
+<StatsGrid stats={stats} columns={4} />
+```
+
+**Stats Bar** - For compact inline stats:
+```tsx
+import { StatsBar, type StatItem } from '@/components/shared/stats-bar'
+const stats: StatItem[] = [
+  { label: 'Cost', value: '$500' },
+  { label: 'Tokens', value: '1.2M', hideOnMobile: true },
+]
+<StatsBar stats={stats} />
+```
+
+**Controls Bar** - For view toggle + sort/filter:
+```tsx
+import { ControlsBar } from '@/components/shared/controls-bar'
+<ControlsBar
+  left={<ViewToggle ... />}
+  right={<Select ... />}
 />
 ```
 
-### Compact Summary Bar (Members)
-For space-efficient inline metrics display:
+**Data Sheet** - For detail views (modal):
 ```tsx
-<div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-card px-4 py-2.5 text-sm">
-  <div className="flex items-center gap-2">
-    <span className="text-muted-foreground">Label:</span>
-    <span className="font-mono font-semibold">{value}</span>
-  </div>
-  {/* Use hidden sm:flex / hidden md:flex for responsive hiding */}
-</div>
+import { DataSheet } from '@/components/shared/data-sheet'
+<DataSheet open={!!selectedId} onClose={close} title="Details" size="xl">
+  <DetailContent id={selectedId} />
+</DataSheet>
+```
+
+**Empty/Error States**:
+```tsx
+import { EmptyState } from '@/components/shared/empty-state'
+import { ErrorState } from '@/components/shared/error-state'
+<EmptyState message="No members found" />
+<ErrorState message="Failed to load" onRetry={refetch} />
+```
+
+**Tag List**:
+```tsx
+import { TagList } from '@/components/shared/tag-list'
+<TagList items={modelsUsed} emptyMessage="No models" />
 ```
 
 ### Chart Components
@@ -400,7 +439,7 @@ interface TreemapData { name: 'root', children: TreemapNode[] }
 
 ## Gotchas & Notes
 
-1. **Member Detail ID Reading:** Uses `window.location.search` for static export compatibility - ID read in `useEffect`, not `useSearchParams()`
+1. **Modal-Based Detail Views:** Member detail uses `DataSheet` modal instead of separate route - no CloudFront rewrite config needed. URL updates via `history.pushState` for shareable links (`/members?detail=X`).
 
 2. **Theme Flash Prevention:** Inline script in `layout.tsx` runs before React hydration to set `dark` class
 
@@ -410,17 +449,17 @@ interface TreemapData { name: 'root', children: TreemapNode[] }
 
 5. **Query Retry:** Only retries on 5xx errors (3 attempts), not 4xx
 
-6. **Static Export Links:** Members page uses `window.location.href` for navigation (not `useRouter`) for static export compatibility
+6. **Chart Accessibility:** All charts include `role="img"` and `aria-label`
 
-7. **Chart Accessibility:** All charts include `role="img"` and `aria-label`
+7. **Treemap Custom Content:** `CostTreemapChart` uses custom SVG renderer for cell labels, auto-hides text for small cells
 
-8. **Treemap Custom Content:** `CostTreemapChart` uses custom SVG renderer for cell labels, auto-hides text for small cells
+8. **Ranking Medals:** Top 3 members display emoji medals (gold, silver, bronze), others show `#N` rank
 
-9. **Ranking Medals:** Top 3 members display emoji medals (gold, silver, bronze), others show `#N` rank
+9. **S3/CloudFront Routing:** NO separate detail routes. Use modals (`DataSheet`) for all detail views. Keep route structure flat: `/`, `/members`, `/reports`, `/login`.
 
-10. **S3/CloudFront Routing:** Avoid adding new page routes - prefer modals/dialogs for detail views. Current `/members/view` route works but requires `index.html` fallback in CloudFront. Future refactor: replace with `MemberDetailModal` on `/members` page.
+10. **No Next.js API Routes:** All API calls use `NEXT_PUBLIC_API_URL` directly to Lambda. Don't create `/app/api/*` routes.
 
-11. **No Next.js API Routes:** All API calls use `NEXT_PUBLIC_API_URL` directly to Lambda. Don't create `/app/api/*` routes.
+11. **Common Components:** Always use components from `shared/` for consistency: `PageHeader`, `StatsBar`, `StatsGrid`, `ControlsBar`, `EmptyState`, `ErrorState`, `DataSheet`, `TagList`.
 
 ## Environment Variables
 

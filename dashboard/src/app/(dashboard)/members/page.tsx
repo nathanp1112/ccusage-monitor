@@ -1,10 +1,17 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { LayoutGrid, BarChart3, List } from 'lucide-react'
+import { PageHeader } from '@/components/shared/page-header'
+import { StatsBar, type StatItem } from '@/components/shared/stats-bar'
+import { ControlsBar } from '@/components/shared/controls-bar'
+import { EmptyState } from '@/components/shared/empty-state'
+import { ErrorState } from '@/components/shared/error-state'
+import { DataSheet } from '@/components/shared/data-sheet'
 import { ViewToggle, type ViewOption } from '@/components/shared/view-toggle'
 import { MemberCard } from '@/components/members/member-card'
 import { MemberRankingList } from '@/components/members/member-ranking-list'
+import { MemberDetailContent } from '@/components/members/member-detail-content'
 import { CostTreemapChart } from '@/components/charts/cost-treemap-chart'
 import {
   Select,
@@ -33,10 +40,26 @@ const sortOptions: { value: MemberSortField; label: string }[] = [
 ]
 
 export default function MembersPage() {
-  const { data: members, isLoading, error } = useMembers()
+  const { data: members, isLoading, error, refetch } = useMembers()
 
   const [view, setView] = useState<MembersViewType>('ranking')
   const [sortField, setSortField] = useState<MemberSortField>('costUsd')
+  const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null)
+
+  // Read ?detail=X from URL on mount for shareable links
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const detailId = params.get('detail')
+    if (detailId) {
+      setSelectedMemberId(detailId)
+    }
+  }, [])
+
+  // Get selected member info for modal title
+  const selectedMember = useMemo(
+    () => members?.find((m) => m.id === selectedMemberId),
+    [members, selectedMemberId]
+  )
 
   // Calculate team totals
   const teamTotals = useMemo(
@@ -62,90 +85,82 @@ export default function MembersPage() {
     [members, treemapMetric]
   )
 
-  const handleMemberClick = (memberId: string) => {
-    // Use window.location for static export compatibility
-    window.location.href = `/members/view/?id=${memberId}`
+  // Open member detail modal
+  const openMemberDetail = (memberId: string) => {
+    setSelectedMemberId(memberId)
+    // Update URL for shareable link (without page reload)
+    window.history.pushState({}, '', `/members?detail=${memberId}`)
   }
+
+  // Close member detail modal
+  const closeMemberDetail = () => {
+    setSelectedMemberId(null)
+    // Reset URL
+    window.history.pushState({}, '', '/members')
+  }
+
+  // Stats for compact bar
+  const stats: StatItem[] = [
+    { label: 'Team Cost', value: formatCurrency(teamTotals.totalCost) },
+    { label: 'Tokens', value: formatTokens(teamTotals.totalInputTokens + teamTotals.totalOutputTokens), hideOnMobile: true },
+    { label: 'Members', value: `${teamTotals.activeCount}/${teamTotals.totalCount}` },
+    { label: 'Avg', value: formatCurrency(teamTotals.avgCostPerMember), hideOnTablet: true },
+  ]
 
   if (isLoading) {
     return <PageLoader />
   }
 
   if (error) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <p className="text-destructive">Failed to load members</p>
-      </div>
-    )
+    return <ErrorState message="Failed to load members" onRetry={refetch} />
   }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold tracking-tight">Members</h2>
-        <p className="text-muted-foreground">
-          View usage details for team members
-        </p>
-      </div>
+    <div className="space-y-4">
+      <PageHeader title="Members" description="View usage details for team members" />
 
-      {/* Compact Summary Bar */}
-      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border bg-card px-4 py-2.5 text-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">Team Cost:</span>
-          <span className="font-mono font-semibold">{formatCurrency(teamTotals.totalCost)}</span>
-        </div>
-        <div className="hidden sm:flex items-center gap-2">
-          <span className="text-muted-foreground">Tokens:</span>
-          <span className="font-mono font-semibold">{formatTokens(teamTotals.totalInputTokens + teamTotals.totalOutputTokens)}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-muted-foreground">Members:</span>
-          <span className="font-semibold">{teamTotals.activeCount}/{teamTotals.totalCount}</span>
-        </div>
-        <div className="hidden md:flex items-center gap-2">
-          <span className="text-muted-foreground">Avg:</span>
-          <span className="font-mono font-semibold">{formatCurrency(teamTotals.avgCostPerMember)}</span>
-        </div>
-      </div>
+      <StatsBar stats={stats} />
 
-      {/* View Toggle + Sort */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <ViewToggle
-          options={viewOptions}
-          value={view}
-          onChange={setView}
-        />
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Sort by:</span>
-          <Select value={sortField} onValueChange={(v) => setSortField(v as MemberSortField)}>
-            <SelectTrigger className="w-[140px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {sortOptions.map((opt) => (
-                <SelectItem key={opt.value} value={opt.value}>
-                  {opt.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
+      <ControlsBar
+        left={
+          <ViewToggle options={viewOptions} value={view} onChange={setView} />
+        }
+        right={
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Sort by:</span>
+            <Select value={sortField} onValueChange={(v) => setSortField(v as MemberSortField)}>
+              <SelectTrigger className="w-[140px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {sortOptions.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        }
+      />
 
       {/* Content based on view */}
       {view === 'ranking' && (
         <MemberRankingList
           members={rankedMembers}
           sortField={sortField}
-          onMemberClick={handleMemberClick}
+          onMemberClick={openMemberDetail}
         />
       )}
 
       {view === 'cards' && (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {rankedMembers.map((member) => (
-            <MemberCard key={member.id} member={member} />
+            <MemberCard
+              key={member.id}
+              member={member}
+              onClick={() => openMemberDetail(member.id)}
+            />
           ))}
         </div>
       )}
@@ -156,16 +171,25 @@ export default function MembersPage() {
           metric={treemapMetric}
           title={`Member Distribution by ${sortOptions.find(o => o.value === sortField)?.label ?? 'Cost'}`}
           onCellClick={(node) => {
-            if (node.id) handleMemberClick(node.id)
+            if (node.id) openMemberDetail(node.id)
           }}
         />
       )}
 
       {(!members || members.length === 0) && (
-        <div className="flex items-center justify-center h-32">
-          <p className="text-muted-foreground">No members found</p>
-        </div>
+        <EmptyState message="No members found" />
       )}
+
+      {/* Member Detail Modal */}
+      <DataSheet
+        open={!!selectedMemberId}
+        onClose={closeMemberDetail}
+        title={selectedMember?.name ?? 'Member Details'}
+        description={selectedMember?.email}
+        size="xl"
+      >
+        {selectedMemberId && <MemberDetailContent memberId={selectedMemberId} />}
+      </DataSheet>
     </div>
   )
 }

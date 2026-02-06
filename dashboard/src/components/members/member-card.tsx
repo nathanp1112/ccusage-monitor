@@ -27,8 +27,8 @@ interface MemberCardProps {
 
 export function MemberCard({ member, onClick }: MemberCardProps) {
   return (
-    <a href={`/members/view/?id=${member.id}`} onClick={onClick}>
-      <Card className="cursor-pointer transition-colors hover:bg-accent">
+    <div onClick={onClick} className="cursor-pointer">
+      <Card className="transition-colors hover:bg-accent">
         <CardHeader className="pb-2">
           <CardTitle className="text-lg">{member.name}</CardTitle>
           <p className="text-sm text-muted-foreground">{member.email}</p>
@@ -85,6 +85,6 @@ export function MemberCard({ member, onClick }: MemberCardProps) {
           </div>
         </CardContent>
       </Card>
-    </a>
+    </div>
   )
 }
