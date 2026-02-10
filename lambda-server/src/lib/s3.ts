@@ -201,6 +201,15 @@ export function getRawDataKey(memberId: string, year: number, month: number): st
 }
 
 /**
+ * Get S3 key for pre-aggregated monthly data
+ * Format: aggregated/{memberId}/{year}-{month}.json
+ */
+export function getAggregatedDataKey(memberId: string, year: number, month: number): string {
+  const monthStr = month.toString().padStart(2, '0');
+  return `aggregated/${memberId}/${year}-${monthStr}.json`;
+}
+
+/**
  * Get S3 key for member registry
  * Format: members/index.json
  */

@@ -12,11 +12,13 @@ import {
   putJsonToS3,
   putJsonToS3WithETag,
   getRawDataKey,
+  getAggregatedDataKey,
   getMemberRegistryKey,
   getSyncLogKey,
   withRetry,
   addCost,
 } from '../lib/s3.js';
+import { aggregateMonthData } from '../lib/aggregation.js';
 import type {
   SyncRequest,
   SyncRequestEntry,
@@ -429,6 +431,15 @@ async function processMonthEntries(
 
     // Save to S3
     await putJsonToS3(key, monthData);
+
+    // Write pre-aggregated summary alongside raw data
+    try {
+      const aggKey = getAggregatedDataKey(memberId, year, month);
+      const aggregation = aggregateMonthData(monthData, year, month);
+      await putJsonToS3(aggKey, aggregation);
+    } catch (aggError) {
+      console.warn(`Failed to write aggregated data for ${memberId}/${year}-${month}:`, aggError);
+    }
 
     return { inserted, skipped };
   });

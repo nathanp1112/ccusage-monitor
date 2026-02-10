@@ -261,3 +261,52 @@ export interface MemberYearlyView {
   months: Record<string, MonthlyData>; // "1", "2", ... "12"
   recentSyncs: SyncLogEntry[];
 }
+
+// ============================================
+// Aggregation Types (S3 /aggregated/{memberId}/{year}-{month}.json)
+// ============================================
+
+export interface DailyModelStats {
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+}
+
+export interface DailyModelUsage {
+  date: string;
+  models: DailyModelStats[];
+}
+
+export interface DayAggregation {
+  date: string;
+  costUsd: number;
+  inputTokens: number;
+  outputTokens: number;
+  recordCount: number;
+}
+
+export interface ModelBreakdown {
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  recordCount: number;
+}
+
+export interface MonthAggregation {
+  year: number;
+  month: number;
+  lastUpdated?: string; // ISO timestamp — when the underlying raw data was last modified
+  totals: {
+    inputTokens: number;
+    outputTokens: number;
+    cacheCreationTokens: number;
+    cacheReadTokens: number;
+    costUsd: number;
+    recordCount: number;
+  };
+  dailyUsage: DayAggregation[];
+  dailyModelUsage: DailyModelUsage[];
+  modelBreakdown: Record<string, ModelBreakdown>;
+  projectBreakdown: Record<string, number>;
+}

@@ -11,12 +11,13 @@
  * - /meta/last-processed.json - Processing metadata
  */
 
-import type { ScheduledEvent, Context } from 'aws-lambda';
+import type { Context } from 'aws-lambda';
 import {
   getJsonFromS3,
   putJsonToS3,
   getMemberRegistryKey,
   getRawDataKey,
+  getAggregatedDataKey,
   getSyncLogKey,
   getDashboardViewKey,
   getMembersViewKey,
@@ -55,7 +56,10 @@ import type {
   MembersView,
   MemberYearlyView,
   MonthlyData,
+  MonthAggregation,
+  DayAggregation,
 } from './lib/types.js';
+import { aggregateMonthData } from './lib/aggregation.js';
 
 // ============================================
 // Types for Aggregator
@@ -68,6 +72,13 @@ interface ProcessingMeta {
   viewsGenerated: string[];
 }
 
+interface AggregatorEvent {
+  source?: string;
+  force?: boolean;
+  time?: string;
+  [key: string]: unknown;
+}
+
 interface MemberAggregatedData {
   memberId: string;
   memberInfo: MemberInfo;
@@ -77,50 +88,6 @@ interface MemberAggregatedData {
   previousMonth: MonthAggregation;
   last30Days: DayAggregation[];
   recentSyncs: SyncLogEntry[];
-}
-
-interface DailyModelStats {
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-}
-
-interface DailyModelUsage {
-  date: string;
-  models: DailyModelStats[];
-}
-
-interface MonthAggregation {
-  year: number;
-  month: number;
-  totals: {
-    inputTokens: number;
-    outputTokens: number;
-    cacheCreationTokens: number;
-    cacheReadTokens: number;
-    costUsd: number;
-    recordCount: number;
-  };
-  dailyUsage: DayAggregation[];
-  dailyModelUsage: DailyModelUsage[];
-  modelBreakdown: Record<string, ModelBreakdown>;
-  projectBreakdown: Record<string, number>;
-}
-
-interface DayAggregation {
-  date: string;
-  costUsd: number;
-  inputTokens: number;
-  outputTokens: number;
-  recordCount: number;
-}
-
-interface ModelBreakdown {
-  inputTokens: number;
-  outputTokens: number;
-  costUsd: number;
-  recordCount: number;
 }
 
 // ============================================
@@ -149,97 +116,50 @@ function getLast30DaysDates(): string[] {
   return dates;
 }
 
-function createEmptyMonthAggregation(year: number, month: number): MonthAggregation {
-  return {
-    year,
-    month,
-    totals: {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheCreationTokens: 0,
-      cacheReadTokens: 0,
-      costUsd: 0,
-      recordCount: 0,
-    },
-    dailyUsage: [],
-    dailyModelUsage: [],
-    modelBreakdown: {},
-    projectBreakdown: {},
-  };
-}
-
-function aggregateMonthData(rawData: RawMonthlyData | null, year: number, month: number): MonthAggregation {
-  const result = createEmptyMonthAggregation(year, month);
-
-  if (!rawData) {
-    return result;
-  }
-
-  const dailyMap = new Map<string, DayAggregation>();
-  const dailyModelMap = new Map<string, DailyModelUsage>();
-
-  for (const [date, dailyRecord] of Object.entries(rawData.records)) {
-    // Aggregate totals (using addCost for proper decimal precision)
-    result.totals.inputTokens += dailyRecord.totals.inputTokens;
-    result.totals.outputTokens += dailyRecord.totals.outputTokens;
-    result.totals.cacheCreationTokens += dailyRecord.totals.cacheCreationTokens;
-    result.totals.cacheReadTokens += dailyRecord.totals.cacheReadTokens;
-    result.totals.costUsd = addCost(result.totals.costUsd, dailyRecord.totals.costUsd);
-    result.totals.recordCount += dailyRecord.totals.recordCount;
-
-    // Aggregate daily usage
-    dailyMap.set(date, {
-      date,
-      costUsd: dailyRecord.totals.costUsd,
-      inputTokens: dailyRecord.totals.inputTokens,
-      outputTokens: dailyRecord.totals.outputTokens,
-      recordCount: dailyRecord.totals.recordCount,
-    });
-
-    // Capture per-day per-model breakdown
-    const dailyModels: DailyModelStats[] = [];
-    for (const [model, stats] of Object.entries(dailyRecord.models)) {
-      dailyModels.push({
-        model,
-        inputTokens: stats.inputTokens,
-        outputTokens: stats.outputTokens,
-        costUsd: stats.costUsd,
-      });
+/**
+ * Read month aggregation with fallback strategy:
+ * - Normal mode: read from aggregated/, fallback to raw/ + compute
+ * - Force mode: always read from raw/ + compute, then backfill aggregated/
+ */
+async function readMonthAggregation(
+  memberId: string,
+  year: number,
+  month: number,
+  force: boolean
+): Promise<MonthAggregation> {
+  if (!force) {
+    // Normal mode: try aggregated/ first
+    const cached = await getJsonFromS3<MonthAggregation>(getAggregatedDataKey(memberId, year, month));
+    if (cached) {
+      return cached;
     }
-    // Sort models by cost descending within each day
-    dailyModels.sort((a, b) => b.costUsd - a.costUsd);
-    dailyModelMap.set(date, { date, models: dailyModels });
-
-    // Aggregate model breakdown (monthly totals)
-    for (const [model, stats] of Object.entries(dailyRecord.models)) {
-      if (!result.modelBreakdown[model]) {
-        result.modelBreakdown[model] = {
-          inputTokens: 0,
-          outputTokens: 0,
-          costUsd: 0,
-          recordCount: 0,
-        };
+    // Fallback to raw/ + compute + backfill
+    const rawData = await getJsonFromS3<RawMonthlyData>(getRawDataKey(memberId, year, month));
+    const aggregation = aggregateMonthData(rawData, year, month);
+    if (rawData) {
+      try {
+        await putJsonToS3(getAggregatedDataKey(memberId, year, month), aggregation);
+      } catch (err) {
+        console.warn(`Failed to backfill aggregated/${memberId}/${year}-${month}:`, err);
       }
-      result.modelBreakdown[model].inputTokens += stats.inputTokens;
-      result.modelBreakdown[model].outputTokens += stats.outputTokens;
-      result.modelBreakdown[model].costUsd = addCost(result.modelBreakdown[model].costUsd, stats.costUsd);
-      result.modelBreakdown[model].recordCount += stats.recordCount;
     }
+    return aggregation;
+  }
 
-    // Aggregate project breakdown
-    for (const entry of dailyRecord.entries) {
-      const project = entry.projectPath || 'Unknown';
-      result.projectBreakdown[project] = addCost(result.projectBreakdown[project] || 0, entry.costUsd);
+  // Force mode: read from raw/ + compute + backfill aggregated/
+  const rawData = await getJsonFromS3<RawMonthlyData>(getRawDataKey(memberId, year, month));
+  const aggregation = aggregateMonthData(rawData, year, month);
+
+  // Backfill aggregated/ only if there's actual raw data
+  if (rawData) {
+    try {
+      await putJsonToS3(getAggregatedDataKey(memberId, year, month), aggregation);
+    } catch (err) {
+      console.warn(`Failed to backfill aggregated/${memberId}/${year}-${month}:`, err);
     }
   }
 
-  // Sort daily usage by date
-  result.dailyUsage = Array.from(dailyMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
-  // Sort daily model usage by date
-  result.dailyModelUsage = Array.from(dailyModelMap.values()).sort((a, b) => a.date.localeCompare(b.date));
-
-  return result;
+  return aggregation;
 }
 
 /**
@@ -249,21 +169,19 @@ function aggregateMonthData(rawData: RawMonthlyData | null, year: number, month:
 async function getMemberAggregatedDataForYear(
   memberId: string,
   memberInfo: MemberInfo,
-  year: number
+  year: number,
+  force: boolean = false
 ): Promise<MemberAggregatedData> {
   // Fetch all 12 months of the specified year in parallel
   const monthNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-  const rawDataResults = await Promise.all(
-    monthNumbers.map((month) =>
-      getJsonFromS3<RawMonthlyData>(getRawDataKey(memberId, year, month))
-    )
+  const aggregationResults = await Promise.all(
+    monthNumbers.map((month) => readMonthAggregation(memberId, year, month, force))
   );
 
-  // Aggregate all 12 months
+  // Build monthly aggregations record
   const monthlyAggregations: Record<string, MonthAggregation> = {};
   for (let i = 0; i < 12; i++) {
-    const month = i + 1;
-    monthlyAggregations[String(month)] = aggregateMonthData(rawDataResults[i], year, month);
+    monthlyAggregations[String(i + 1)] = aggregationResults[i];
   }
 
   // For historical years, use December as "current" and November as "previous"
@@ -282,32 +200,31 @@ async function getMemberAggregatedDataForYear(
   };
 }
 
-async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo): Promise<MemberAggregatedData> {
+async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo, force: boolean = false): Promise<MemberAggregatedData> {
   const { year: currentYear, month: currentMonthNum } = getCurrentMonth();
   const { year: prevYear, month: prevMonth } = getPreviousMonth();
 
   // Fetch all 12 months of the current year in parallel
   const monthNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-  const rawDataPromises = monthNumbers.map((month) =>
-    getJsonFromS3<RawMonthlyData>(getRawDataKey(memberId, currentYear, month))
+  const aggregationPromises = monthNumbers.map((month) =>
+    readMonthAggregation(memberId, currentYear, month, force)
   );
 
   // Also fetch previous month if it's from previous year (for dashboard comparison)
   const prevMonthPromise =
     prevYear !== currentYear
-      ? getJsonFromS3<RawMonthlyData>(getRawDataKey(memberId, prevYear, prevMonth))
+      ? readMonthAggregation(memberId, prevYear, prevMonth, force)
       : Promise.resolve(null);
 
-  const [rawDataResults, prevYearMonthRaw] = await Promise.all([
-    Promise.all(rawDataPromises),
+  const [aggregationResults, prevYearMonthAgg] = await Promise.all([
+    Promise.all(aggregationPromises),
     prevMonthPromise,
   ]);
 
-  // Aggregate all 12 months
+  // Build monthly aggregations record
   const monthlyAggregations: Record<string, MonthAggregation> = {};
   for (let i = 0; i < 12; i++) {
-    const month = i + 1;
-    monthlyAggregations[String(month)] = aggregateMonthData(rawDataResults[i], currentYear, month);
+    monthlyAggregations[String(i + 1)] = aggregationResults[i];
   }
 
   // Get current and previous month aggregations for dashboard/members views
@@ -315,7 +232,7 @@ async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo)
   const previousMonthAgg =
     prevYear === currentYear
       ? monthlyAggregations[String(prevMonth)]
-      : aggregateMonthData(prevYearMonthRaw, prevYear, prevMonth);
+      : prevYearMonthAgg!;
 
   // Get last 30 days data
   const last30DaysDates = getLast30DaysDates();
@@ -601,28 +518,45 @@ function generateMemberYearlyView(memberData: MemberAggregatedData): MemberYearl
 // ============================================
 
 export const handler = async (
-  event: ScheduledEvent,
+  event: AggregatorEvent,
   context: Context
-): Promise<{ status: string; membersProcessed: number; viewsGenerated: string[]; durationMs: number }> => {
+): Promise<{
+  status: string;
+  membersProcessed: number;
+  processedMonths: string[];
+  memberSummaries: Array<{ memberId: string; name: string; months: string[]; totalRecords: number }>;
+  viewsGenerated: string[];
+  durationMs: number;
+  force: boolean;
+}> => {
   const startTime = Date.now();
+  const force = event.force === true;
 
   console.log('Aggregator triggered', {
     eventTime: event.time,
     requestId: context.awsRequestId,
     functionName: context.functionName,
+    force,
   });
 
   try {
-    // 1. Read member registry
-    const registry = await getJsonFromS3<MemberRegistry>(getMemberRegistryKey());
+    // 1. Read member registry + previous processing meta (for change detection)
+    const [registry, previousMeta] = await Promise.all([
+      getJsonFromS3<MemberRegistry>(getMemberRegistryKey()),
+      getJsonFromS3<ProcessingMeta>(getMetaKey()),
+    ]);
+    const lastProcessedAt = previousMeta?.lastProcessedAt ?? null;
 
     if (!registry || Object.keys(registry.members).length === 0) {
       console.log('No members found in registry, skipping aggregation');
       return {
         status: 'ok',
         membersProcessed: 0,
+        processedMonths: [],
+        memberSummaries: [],
         viewsGenerated: [],
         durationMs: Date.now() - startTime,
+        force,
       };
     }
 
@@ -632,7 +566,7 @@ export const handler = async (
     // 2. Fetch aggregated data for all members with bounded concurrency
     const memberDataList = await mapWithConcurrency(
       memberIds,
-      (memberId) => getMemberAggregatedData(memberId, registry.members[memberId]),
+      (memberId) => getMemberAggregatedData(memberId, registry.members[memberId], force),
       LIMITS.S3_CONCURRENCY
     );
 
@@ -664,15 +598,15 @@ export const handler = async (
     // Also generate views for previous year (2025) if we're early in the year
     // This ensures December 2025 data is accessible
     const previousYear = currentYear - 1;
+    let prevYearMemberData: MemberAggregatedData[] = [];
     if (previousYear >= 2024) {
-      const prevYearMemberData = await mapWithConcurrency(
+      prevYearMemberData = await mapWithConcurrency(
         memberIds,
-        (memberId) => getMemberAggregatedDataForYear(memberId, registry.members[memberId], previousYear),
+        (memberId) => getMemberAggregatedDataForYear(memberId, registry.members[memberId], previousYear, force),
         LIMITS.S3_CONCURRENCY
       );
 
       for (const memberData of prevYearMemberData) {
-        // Only generate view if there's actual data for this year
         const hasData = Object.values(memberData.monthlyAggregations).some(
           (m) => m.totals.recordCount > 0
         );
@@ -686,7 +620,63 @@ export const handler = async (
       console.log(`Generated member yearly views for ${previousYear}`)
     }
 
-    // 4. Update processing metadata
+    // 4. Collect processed months per member (only months changed since last run)
+    // First run (no meta): all months with data. Subsequent runs: only months with new data.
+    const allProcessedMonths = new Set<string>();
+    const memberSummaries: Array<{
+      memberId: string;
+      name: string;
+      months: string[];
+      totalRecords: number;
+    }> = [];
+
+    function isMonthChanged(agg: MonthAggregation): boolean {
+      if (agg.totals.recordCount === 0) return false;
+      if (!lastProcessedAt) return true; // first run — include all
+      if (!agg.lastUpdated) return true; // no timestamp — assume changed (safe default)
+      return agg.lastUpdated > lastProcessedAt;
+    }
+
+    for (const memberData of memberDataList) {
+      const memberMonths: string[] = [];
+      let totalRecords = 0;
+
+      // Current year months
+      for (const [monthKey, agg] of Object.entries(memberData.monthlyAggregations)) {
+        if (isMonthChanged(agg)) {
+          const monthStr = `${currentYear}-${monthKey.padStart(2, '0')}`;
+          memberMonths.push(monthStr);
+          allProcessedMonths.add(monthStr);
+          totalRecords += agg.totals.recordCount;
+        }
+      }
+
+      // Previous year months
+      const prevData = prevYearMemberData.find((d) => d.memberId === memberData.memberId);
+      if (prevData) {
+        for (const [monthKey, agg] of Object.entries(prevData.monthlyAggregations)) {
+          if (isMonthChanged(agg)) {
+            const monthStr = `${previousYear}-${monthKey.padStart(2, '0')}`;
+            memberMonths.push(monthStr);
+            allProcessedMonths.add(monthStr);
+            totalRecords += agg.totals.recordCount;
+          }
+        }
+      }
+
+      if (memberMonths.length > 0) {
+        memberSummaries.push({
+          memberId: memberData.memberId,
+          name: memberData.memberInfo.name,
+          months: memberMonths.sort(),
+          totalRecords,
+        });
+      }
+    }
+
+    const processedMonths = Array.from(allProcessedMonths).sort();
+
+    // 5. Update processing metadata
     const durationMs = Date.now() - startTime;
     const processingMeta: ProcessingMeta = {
       lastProcessedAt: new Date().toISOString(),
@@ -698,6 +688,7 @@ export const handler = async (
 
     console.log('Aggregator completed', {
       membersProcessed: memberDataList.length,
+      processedMonths,
       viewsGenerated: viewsGenerated.length,
       durationMs,
     });
@@ -705,8 +696,11 @@ export const handler = async (
     return {
       status: 'ok',
       membersProcessed: memberDataList.length,
+      processedMonths,
+      memberSummaries,
       viewsGenerated,
       durationMs,
+      force,
     };
   } catch (error) {
     console.error('Aggregator error:', error);

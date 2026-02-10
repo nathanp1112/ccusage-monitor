@@ -38,19 +38,59 @@ adminRoute.post('/aggregate', async (c) => {
   }
 
   try {
+    // Extract force flag from query params
+    const url = new URL(c.req.url);
+    const force = url.searchParams.get('force') === 'true';
+
     const client = getLambdaClient();
     const command = new InvokeCommand({
       FunctionName: functionName,
-      InvocationType: 'Event', // Async invocation
-      Payload: JSON.stringify({ source: 'api-trigger' }),
+      InvocationType: 'RequestResponse', // Synchronous — wait for result
+      Payload: JSON.stringify({ source: 'api-trigger', force }),
     });
 
-    await client.send(command);
+    const response = await client.send(command);
+
+    // Parse aggregator result from Lambda response payload
+    let payloadStr = '';
+    if (response.Payload) {
+      if (typeof response.Payload === 'string') {
+        payloadStr = response.Payload;
+      } else {
+        // Uint8Array, Uint8ArrayBlobAdapter, or Buffer
+        const bytes = response.Payload instanceof Uint8Array
+          ? response.Payload
+          : new Uint8Array(response.Payload);
+        payloadStr = new TextDecoder().decode(bytes);
+      }
+    }
+
+    // Check for Lambda-level errors
+    if (response.FunctionError) {
+      return c.json(
+        {
+          success: false,
+          error: `Aggregator failed: ${response.FunctionError}`,
+          details: payloadStr ? JSON.parse(payloadStr) : null,
+        },
+        500
+      );
+    }
+
+    if (!payloadStr) {
+      return c.json({ success: true, message: 'Aggregator completed (no response payload)', force });
+    }
+
+    let result = JSON.parse(payloadStr);
+    // Lambda may double-encode the result as a JSON string
+    if (typeof result === 'string') {
+      result = JSON.parse(result);
+    }
 
     return c.json({
       success: true,
-      message: 'Aggregator triggered successfully',
-      functionName,
+      message: `Aggregation completed${force ? ' (force rebuild)' : ''}`,
+      ...result,
     });
   } catch (error) {
     console.error('Failed to trigger aggregator:', error);
