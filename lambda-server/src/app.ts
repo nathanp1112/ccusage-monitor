@@ -81,6 +81,14 @@ app.all('/api/*', async (c, next) => {
     return membersApp.fetch(c.req.raw);
   }
 
+  // Route: /api/agent/* (Agent-facing endpoints)
+  if (path.startsWith('/api/agent')) {
+    const { default: agentRoute } = await import('./routes/agent.js');
+    const agentApp = new Hono();
+    agentApp.route('/api/agent', agentRoute);
+    return agentApp.fetch(c.req.raw);
+  }
+
   // Route: /api/admin/* (Admin endpoints)
   if (path.startsWith('/api/admin')) {
     const { default: adminRoute } = await import('./routes/admin.js');

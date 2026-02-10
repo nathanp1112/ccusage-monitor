@@ -5,6 +5,7 @@ import {
   adaptMembersResponse,
   adaptMemberDetailResponse,
   isLambdaResponse,
+  type ProjectDataItem,
 } from '@/lib/api-adapters'
 import type { MemberFilters, DateRange } from '@/types/api'
 
@@ -77,7 +78,11 @@ export interface MemberDetailData {
     endDate: string
   }
   dailyUsage: DailyUsageData[]
+  projects: ProjectDataItem[]
+  promptStats: Record<string, { count: number }>
 }
+
+export type { ProjectDataItem }
 
 /**
  * Member usage record from API
@@ -235,6 +240,8 @@ interface LambdaMemberDetailResponse {
       userAgent: string | null
       agentVersion: string | null
     }>
+    projects?: ProjectDataItem[]
+    promptStats?: Record<string, { count: number }>
   }
 }
 

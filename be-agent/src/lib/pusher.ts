@@ -1,7 +1,7 @@
 import { request } from 'undici';
 import { hostname } from 'node:os';
 import type { AgentConfig } from './config.js';
-import type { UsageEntry } from './collector.js';
+import type { UsageEntry, ProjectInfo, PromptEntry } from './collector.js';
 
 /**
  * Server response for usage ingestion (Lambda API format)
@@ -38,6 +38,8 @@ function sleep(ms: number): Promise<void> {
 async function pushBatch(
   entries: UsageEntry[],
   config: AgentConfig,
+  projects: ProjectInfo[],
+  prompts: PromptEntry[],
   attempt: number = 1
 ): Promise<PushResult> {
   const url = `${config.server_url}/api/sync`;
@@ -57,7 +59,19 @@ async function pushBatch(
       cost_usd: e.cost_usd,
       claude_version: e.version,
     })),
-    agent_version: '0.2.0',
+    projects: projects.map((p) => ({
+      path: p.path,
+      git_repo: p.gitRepo,
+    })),
+    prompts: prompts.map((p) => ({
+      uuid: p.uuid,
+      session_id: p.session_id,
+      timestamp: p.timestamp,
+      project_path: p.project_path,
+      cwd: p.cwd,
+      content: p.content,
+    })),
+    agent_version: '0.3.1',
     hostname: hostname(),
   };
 
@@ -98,7 +112,7 @@ async function pushBatch(
       const backoffMs = Math.pow(2, attempt) * 1000; // Exponential backoff
       console.log(`Server error (${response.statusCode}), retrying in ${backoffMs}ms...`);
       await sleep(backoffMs);
-      return pushBatch(entries, config, attempt + 1);
+      return pushBatch(entries, config, projects, prompts, attempt + 1);
     }
 
     return {
@@ -114,7 +128,7 @@ async function pushBatch(
       const backoffMs = Math.pow(2, attempt) * 1000;
       console.log(`Network error, retrying in ${backoffMs}ms...`);
       await sleep(backoffMs);
-      return pushBatch(entries, config, attempt + 1);
+      return pushBatch(entries, config, projects, prompts, attempt + 1);
     }
 
     return {
@@ -133,31 +147,53 @@ async function pushBatch(
 export async function pushToServer(
   entries: UsageEntry[],
   config: AgentConfig,
-  onProgress?: (batch: number, total: number) => void
+  options?: {
+    projects?: ProjectInfo[];
+    prompts?: PromptEntry[];
+    onProgress?: (batch: number, total: number) => void;
+  }
 ): Promise<{
   totalSynced: number;
   totalSkipped: number;
   errors: string[];
 }> {
-  if (entries.length === 0) {
+  const projects = options?.projects || [];
+  const prompts = options?.prompts || [];
+  const onProgress = options?.onProgress;
+
+  if (entries.length === 0 && prompts.length === 0 && projects.length === 0) {
     return { totalSynced: 0, totalSkipped: 0, errors: [] };
   }
 
   const batchSize = config.max_batch_size;
-  const batches = Math.ceil(entries.length / batchSize);
+  const promptBatchSize = 500; // Prompts contain full text, batch smaller
+
+  // Calculate total batches needed for both entries and prompts
+  const entryBatches = Math.ceil(entries.length / batchSize);
+  const promptBatches = Math.ceil(prompts.length / promptBatchSize);
+  const totalBatches = Math.max(1, Math.max(entryBatches, promptBatches));
 
   let totalSynced = 0;
   let totalSkipped = 0;
   const errors: string[] = [];
 
-  for (let i = 0; i < batches; i++) {
-    const start = i * batchSize;
-    const end = Math.min(start + batchSize, entries.length);
-    const batch = entries.slice(start, end);
+  for (let i = 0; i < totalBatches; i++) {
+    // Slice entries for this batch
+    const entryStart = i * batchSize;
+    const entryEnd = Math.min(entryStart + batchSize, entries.length);
+    const batch = entryStart < entries.length ? entries.slice(entryStart, entryEnd) : [];
 
-    onProgress?.(i + 1, batches);
+    // Slice prompts for this batch
+    const promptStart = i * promptBatchSize;
+    const promptEnd = Math.min(promptStart + promptBatchSize, prompts.length);
+    const batchPrompts = promptStart < prompts.length ? prompts.slice(promptStart, promptEnd) : [];
 
-    const result = await pushBatch(batch, config);
+    // Send projects only on the first batch (small payload)
+    const batchProjects = i === 0 ? projects : [];
+
+    onProgress?.(i + 1, totalBatches);
+
+    const result = await pushBatch(batch, config, batchProjects, batchPrompts);
 
     if (result.success) {
       totalSynced += result.synced;

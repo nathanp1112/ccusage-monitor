@@ -120,10 +120,26 @@ export interface SyncRequestEntry {
   claude_version?: string | null;
 }
 
+export interface SyncRequestProject {
+  path: string;
+  git_repo: string | null;
+}
+
+export interface SyncRequestPrompt {
+  uuid: string;
+  session_id: string;
+  timestamp: string;
+  project_path: string;
+  cwd: string;
+  content: string;
+}
+
 export interface SyncRequest {
   email: string;
   name?: string;
   entries: SyncRequestEntry[];
+  projects?: SyncRequestProject[];
+  prompts?: SyncRequestPrompt[];
   hostname?: string;
   agent_version?: string;
 }
@@ -260,6 +276,70 @@ export interface MemberYearlyView {
   year: number;
   months: Record<string, MonthlyData>; // "1", "2", ... "12"
   recentSyncs: SyncLogEntry[];
+  projects: ProjectData[];
+  promptStats: Record<string, { count: number }>; // "1": { count: 42 }, etc.
+}
+
+// ============================================
+// Project Tracking Types (S3 /projects/{memberId}.json)
+// ============================================
+
+export interface ProjectData {
+  path: string;
+  gitRepo: string | null;
+  firstSeen: string; // ISO timestamp
+  lastSeen: string; // ISO timestamp
+}
+
+export interface MemberProjects {
+  memberId: string;
+  lastUpdated: string;
+  projects: Record<string, ProjectData>; // keyed by path
+}
+
+// ============================================
+// Prompt Audit Types (S3 /prompts/{memberId}/{year}-{month}.json)
+// ============================================
+
+export interface PromptRecord {
+  uuid: string;
+  sessionId: string;
+  timestamp: string;
+  projectPath: string;
+  cwd: string;
+  content: string;
+  syncedAt: string;
+}
+
+export interface PromptMonthlyData {
+  memberId: string;
+  year: number;
+  month: number;
+  lastUpdated: string;
+  prompts: PromptRecord[];
+}
+
+// ============================================
+// Admin Command Types (S3 /commands/{memberId}/queue.json)
+// ============================================
+
+export type CommandType = 'revoke-token' | 'force-sync' | 'update-config' | 'custom';
+
+export interface AgentCommand {
+  id: string; // UUID
+  type: CommandType;
+  payload: Record<string, unknown>;
+  createdAt: string;
+  createdBy: string; // Admin email or "system"
+  status: 'pending' | 'acked' | 'failed';
+  ackedAt?: string;
+  result?: string;
+}
+
+export interface CommandQueue {
+  memberId: string;
+  lastUpdated: string;
+  commands: AgentCommand[];
 }
 
 // ============================================

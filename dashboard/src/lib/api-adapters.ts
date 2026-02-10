@@ -112,6 +112,14 @@ interface LambdaMonthlyData {
   }>
 }
 
+// Project data from agent sync
+export interface ProjectDataItem {
+  path: string
+  gitRepo: string | null
+  firstSeen: string
+  lastSeen: string
+}
+
 // New yearly API response format
 interface LambdaMemberYearlyView {
   generatedAt: string
@@ -134,6 +142,8 @@ interface LambdaMemberYearlyView {
     userAgent: string | null
     agentVersion: string | null
   }>
+  projects?: ProjectDataItem[]
+  promptStats?: Record<string, { count: number }>
 }
 
 // ============================================
@@ -234,6 +244,8 @@ export interface FrontendMemberDetailData {
     endDate: string
   }
   dailyUsage: FrontendDailyUsageData[]
+  projects: ProjectDataItem[]
+  promptStats: Record<string, { count: number }>
 }
 
 // ============================================
@@ -391,6 +403,8 @@ export function adaptMemberDetailResponse(
       recordCount: d.recordCount || 1,
       modelBreakdown: modelBreakdownMap,
     })) || [],
+    projects: data.projects || [],
+    promptStats: data.promptStats || {},
   }
 }
 

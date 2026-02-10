@@ -2,6 +2,7 @@ import { appendFileSync } from 'node:fs';
 import { loadConfig, loadState, saveState, LOG_FILE } from './lib/config.js';
 import { collectUsageData } from './lib/collector.js';
 import { pushToServer } from './lib/pusher.js';
+import { pollAndExecuteCommands } from './lib/commander.js';
 
 /**
  * Log message to file
@@ -37,8 +38,12 @@ async function syncCycle(): Promise<void> {
     }
 
     // Push to server
-    const pushResult = await pushToServer(result.entries, config);
+    const pushResult = await pushToServer(result.entries, config, {
+      projects: result.projects,
+      prompts: result.prompts,
+    });
     log(`Pushed: ${pushResult.totalSynced} synced, ${pushResult.totalSkipped} skipped`);
+    log(`Projects discovered: ${result.projects.length}, Prompts collected: ${result.prompts.length}`);
 
     if (pushResult.errors.length > 0) {
       log(`Push errors: ${pushResult.errors.join(', ')}`);
@@ -54,12 +59,23 @@ async function syncCycle(): Promise<void> {
         ...state.seen_request_ids,
         ...result.entries.map((e) => e.request_id),
       ],
+      seen_prompt_uuids: [
+        ...(state.seen_prompt_uuids || []),
+        ...result.prompts.map((p) => p.uuid),
+      ],
     };
 
     saveState(newState);
     log(`Sync complete. Total synced: ${newState.total_synced_records}`);
   } catch (err) {
     log(`Sync error: ${(err as Error).message}`);
+  }
+
+  // Poll for admin commands (non-fatal)
+  try {
+    await pollAndExecuteCommands(config);
+  } catch (err) {
+    log(`Command poll error: ${(err as Error).message}`);
   }
 }
 

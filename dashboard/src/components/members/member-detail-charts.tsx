@@ -69,6 +69,7 @@ interface LambdaMemberDetailResponse {
       recordCount: number
       hostname: string
     }>
+    promptStats?: Record<string, { count: number }>
   }
 }
 
@@ -171,6 +172,12 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
     }))
   }, [currentMonthData?.dailyUsage])
 
+  // Prompt count for selected month
+  const promptCount = useMemo(() => {
+    const monthKey = String(selectedMonth + 1)
+    return data?.promptStats?.[monthKey]?.count ?? 0
+  }, [data?.promptStats, selectedMonth])
+
   const monthName = new Date(selectedYear, selectedMonth).toLocaleDateString(
     'en-US',
     { month: 'long', year: 'numeric' }
@@ -252,7 +259,7 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
           <CardTitle>{monthName} Summary</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
             <div>
               <p className="text-sm text-muted-foreground">Total Cost</p>
               <p className="text-xl font-mono font-semibold">
@@ -275,6 +282,12 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
               <p className="text-sm text-muted-foreground">Requests</p>
               <p className="text-xl font-mono font-semibold">
                 {monthTotals.recordCount.toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Prompts</p>
+              <p className="text-xl font-mono font-semibold">
+                {promptCount.toLocaleString()}
               </p>
             </div>
           </div>

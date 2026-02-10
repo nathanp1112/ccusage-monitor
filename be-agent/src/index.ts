@@ -4,6 +4,7 @@ import { setupCommand } from './commands/setup.js';
 import { uninstallCommand } from './commands/uninstall.js';
 import { pushCommand } from './commands/push.js';
 import { statusCommand } from './commands/status.js';
+import { updateCommand } from './commands/update.js';
 
 const program = new Command();
 
@@ -46,6 +47,15 @@ program
   .description('Show agent status and configuration')
   .action(async () => {
     await statusCommand();
+  });
+
+// Update - auto-download and install latest version
+program
+  .command('update')
+  .description('Check for updates and install latest version')
+  .option('-f, --force', 'Force update even if already on latest version')
+  .action(async (options) => {
+    await updateCommand({ force: options.force });
   });
 
 // Uninstall - remove auto-start service

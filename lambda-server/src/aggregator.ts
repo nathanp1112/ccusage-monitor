@@ -23,6 +23,8 @@ import {
   getMembersViewKey,
   getMemberDetailViewKey,
   getMetaKey,
+  getProjectsKey,
+  getPromptsKey,
   mapWithConcurrency,
   addCost,
 } from './lib/s3.js';
@@ -58,6 +60,9 @@ import type {
   MonthlyData,
   MonthAggregation,
   DayAggregation,
+  MemberProjects,
+  ProjectData,
+  PromptMonthlyData,
 } from './lib/types.js';
 import { aggregateMonthData } from './lib/aggregation.js';
 
@@ -88,6 +93,8 @@ interface MemberAggregatedData {
   previousMonth: MonthAggregation;
   last30Days: DayAggregation[];
   recentSyncs: SyncLogEntry[];
+  projects: ProjectData[];
+  promptStats: Record<string, { count: number }>;
 }
 
 // ============================================
@@ -172,17 +179,33 @@ async function getMemberAggregatedDataForYear(
   year: number,
   force: boolean = false
 ): Promise<MemberAggregatedData> {
-  // Fetch all 12 months of the specified year in parallel
+  // Fetch all 12 months of the specified year + projects + prompt counts in parallel
   const monthNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
-  const aggregationResults = await Promise.all(
-    monthNumbers.map((month) => readMonthAggregation(memberId, year, month, force))
-  );
+  const [aggregationResults, memberProjects, ...promptResults] = await Promise.all([
+    Promise.all(monthNumbers.map((month) => readMonthAggregation(memberId, year, month, force))),
+    getJsonFromS3<MemberProjects>(getProjectsKey(memberId)),
+    ...monthNumbers.map((month) => getJsonFromS3<PromptMonthlyData>(getPromptsKey(memberId, year, month))),
+  ]);
 
   // Build monthly aggregations record
   const monthlyAggregations: Record<string, MonthAggregation> = {};
   for (let i = 0; i < 12; i++) {
     monthlyAggregations[String(i + 1)] = aggregationResults[i];
   }
+
+  // Build prompt stats per month
+  const promptStats: Record<string, { count: number }> = {};
+  for (let i = 0; i < 12; i++) {
+    const promptData = promptResults[i] as PromptMonthlyData | null;
+    if (promptData?.prompts?.length) {
+      promptStats[String(i + 1)] = { count: promptData.prompts.length };
+    }
+  }
+
+  // Extract projects list
+  const projects = memberProjects
+    ? Object.values(memberProjects.projects)
+    : [];
 
   // For historical years, use December as "current" and November as "previous"
   const currentMonthAgg = monthlyAggregations['12'];
@@ -197,6 +220,8 @@ async function getMemberAggregatedDataForYear(
     previousMonth: previousMonthAgg,
     last30Days: [], // Not needed for historical views
     recentSyncs: [], // Not needed for historical views
+    projects,
+    promptStats,
   };
 }
 
@@ -204,7 +229,7 @@ async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo,
   const { year: currentYear, month: currentMonthNum } = getCurrentMonth();
   const { year: prevYear, month: prevMonth } = getPreviousMonth();
 
-  // Fetch all 12 months of the current year in parallel
+  // Fetch all 12 months of the current year + projects + prompt counts in parallel
   const monthNumbers = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
   const aggregationPromises = monthNumbers.map((month) =>
     readMonthAggregation(memberId, currentYear, month, force)
@@ -216,9 +241,11 @@ async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo,
       ? readMonthAggregation(memberId, prevYear, prevMonth, force)
       : Promise.resolve(null);
 
-  const [aggregationResults, prevYearMonthAgg] = await Promise.all([
+  const [aggregationResults, prevYearMonthAgg, memberProjects, ...promptResults] = await Promise.all([
     Promise.all(aggregationPromises),
     prevMonthPromise,
+    getJsonFromS3<MemberProjects>(getProjectsKey(memberId)),
+    ...monthNumbers.map((month) => getJsonFromS3<PromptMonthlyData>(getPromptsKey(memberId, currentYear, month))),
   ]);
 
   // Build monthly aggregations record
@@ -266,6 +293,20 @@ async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo,
   const syncLog = await getJsonFromS3<SyncLog>(getSyncLogKey(memberId, currentYear, currentMonthNum));
   const recentSyncs = (syncLog?.entries || []).slice(-LIMITS.RECENT_SYNCS_PER_MEMBER).reverse();
 
+  // Build prompt stats per month
+  const promptStats: Record<string, { count: number }> = {};
+  for (let i = 0; i < 12; i++) {
+    const promptData = promptResults[i] as PromptMonthlyData | null;
+    if (promptData?.prompts?.length) {
+      promptStats[String(i + 1)] = { count: promptData.prompts.length };
+    }
+  }
+
+  // Extract projects list
+  const projects = memberProjects
+    ? Object.values(memberProjects.projects)
+    : [];
+
   return {
     memberId,
     memberInfo,
@@ -275,6 +316,8 @@ async function getMemberAggregatedData(memberId: string, memberInfo: MemberInfo,
     previousMonth: previousMonthAgg,
     last30Days,
     recentSyncs,
+    projects,
+    promptStats,
   };
 }
 
@@ -510,6 +553,8 @@ function generateMemberYearlyView(memberData: MemberAggregatedData): MemberYearl
     year: memberData.year,
     months,
     recentSyncs: memberData.recentSyncs,
+    projects: memberData.projects,
+    promptStats: memberData.promptStats,
   };
 }
 

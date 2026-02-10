@@ -15,6 +15,8 @@ import {
   getAggregatedDataKey,
   getMemberRegistryKey,
   getSyncLogKey,
+  getProjectsKey,
+  getPromptsKey,
   withRetry,
   addCost,
 } from '../lib/s3.js';
@@ -22,12 +24,18 @@ import { aggregateMonthData } from '../lib/aggregation.js';
 import type {
   SyncRequest,
   SyncRequestEntry,
+  SyncRequestProject,
+  SyncRequestPrompt,
   SyncResponse,
   RawMonthlyData,
   DailyRecord,
   UsageEntry,
   MemberRegistry,
   MemberInfo,
+  MemberProjects,
+  ProjectData,
+  PromptMonthlyData,
+  PromptRecord,
   SyncLog,
   SyncLogEntry,
 } from '../lib/types.js';
@@ -52,10 +60,26 @@ const syncEntrySchema = z.object({
   claude_version: z.string().nullable().optional(),
 });
 
+const syncProjectSchema = z.object({
+  path: z.string().min(1),
+  git_repo: z.string().nullable(),
+});
+
+const syncPromptSchema = z.object({
+  uuid: z.string().min(1),
+  session_id: z.string(),
+  timestamp: z.string().min(1),
+  project_path: z.string(),
+  cwd: z.string(),
+  content: z.string(),
+});
+
 const syncRequestSchema = z.object({
   email: z.string().email('Invalid email format'),
   name: z.string().optional(),
   entries: z.array(syncEntrySchema),
+  projects: z.array(syncProjectSchema).optional(),
+  prompts: z.array(syncPromptSchema).optional(),
   hostname: z.string().optional(),
   agent_version: z.string().optional(),
 });
@@ -178,7 +202,7 @@ syncRoute.post(
   async (c) => {
     const startTime = Date.now();
     const body = c.req.valid('json') as SyncRequest;
-    const { email, name, entries, hostname, agent_version } = body;
+    const { email, name, entries, projects, prompts, hostname, agent_version } = body;
 
     // Handle empty entries - success with 0 inserted
     if (entries.length === 0) {
@@ -224,6 +248,25 @@ syncRoute.post(
 
         totalInserted += inserted;
         totalSkipped += skipped;
+      }
+
+      // Save project data if provided
+      if (projects && projects.length > 0) {
+        try {
+          await saveProjectData(memberId, projects);
+        } catch (projError) {
+          console.warn(`Failed to save project data for ${memberId}:`, projError);
+        }
+      }
+
+      // Save prompts if provided
+      let totalPromptsInserted = 0;
+      if (prompts && prompts.length > 0) {
+        try {
+          totalPromptsInserted = await savePrompts(memberId, prompts);
+        } catch (promptError) {
+          console.warn(`Failed to save prompts for ${memberId}:`, promptError);
+        }
       }
 
       // Update member lastSyncAt
@@ -492,6 +535,117 @@ async function logSyncOperation(
 
     await putJsonToS3(key, syncLog);
   });
+}
+
+// ============================================
+// Project Data Functions
+// ============================================
+
+async function saveProjectData(
+  memberId: string,
+  projects: SyncRequestProject[]
+): Promise<void> {
+  const key = getProjectsKey(memberId);
+  let memberProjects = await getJsonFromS3<MemberProjects>(key);
+
+  if (!memberProjects) {
+    memberProjects = {
+      memberId,
+      lastUpdated: new Date().toISOString(),
+      projects: {},
+    };
+  }
+
+  const now = new Date().toISOString();
+
+  for (const project of projects) {
+    const existing = memberProjects.projects[project.path];
+    if (existing) {
+      // Update lastSeen and gitRepo
+      existing.lastSeen = now;
+      existing.gitRepo = project.git_repo;
+    } else {
+      // New project
+      memberProjects.projects[project.path] = {
+        path: project.path,
+        gitRepo: project.git_repo,
+        firstSeen: now,
+        lastSeen: now,
+      };
+    }
+  }
+
+  memberProjects.lastUpdated = now;
+  await putJsonToS3(key, memberProjects);
+}
+
+// ============================================
+// Prompt Logging Functions
+// ============================================
+
+async function savePrompts(
+  memberId: string,
+  prompts: SyncRequestPrompt[]
+): Promise<number> {
+  // Group prompts by year-month
+  const promptsByMonth = new Map<string, SyncRequestPrompt[]>();
+  for (const prompt of prompts) {
+    const date = prompt.timestamp.split('T')[0];
+    const [yearStr, monthStr] = date.split('-');
+    const key = `${yearStr}-${monthStr}`;
+
+    if (!promptsByMonth.has(key)) {
+      promptsByMonth.set(key, []);
+    }
+    promptsByMonth.get(key)!.push(prompt);
+  }
+
+  let totalInserted = 0;
+
+  for (const [monthKey, monthPrompts] of promptsByMonth) {
+    const [yearStr, monthStr] = monthKey.split('-');
+    const year = parseInt(yearStr, 10);
+    const month = parseInt(monthStr, 10);
+    const key = getPromptsKey(memberId, year, month);
+
+    let promptData = await getJsonFromS3<PromptMonthlyData>(key);
+
+    if (!promptData) {
+      promptData = {
+        memberId,
+        year,
+        month,
+        lastUpdated: new Date().toISOString(),
+        prompts: [],
+      };
+    }
+
+    // Dedup by uuid
+    const existingUuids = new Set(promptData.prompts.map((p) => p.uuid));
+    const now = new Date().toISOString();
+
+    for (const prompt of monthPrompts) {
+      if (existingUuids.has(prompt.uuid)) continue;
+
+      const record: PromptRecord = {
+        uuid: prompt.uuid,
+        sessionId: prompt.session_id,
+        timestamp: prompt.timestamp,
+        projectPath: prompt.project_path,
+        cwd: prompt.cwd,
+        content: prompt.content,
+        syncedAt: now,
+      };
+
+      promptData.prompts.push(record);
+      totalInserted++;
+    }
+
+    promptData.lastUpdated = now;
+    await putJsonToS3(key, promptData);
+  }
+
+  return totalInserted;
 }
 
 export default syncRoute;

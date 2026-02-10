@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo } from 'react'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { StatsBar, type StatItem } from '@/components/shared/stats-bar'
 import { TagList } from '@/components/shared/tag-list'
 import { ErrorState } from '@/components/shared/error-state'
@@ -78,6 +79,54 @@ export function MemberDetailContent({ memberId }: MemberDetailContentProps) {
         </p>
         <TagList items={modelsUsed} emptyMessage="No models used yet" />
       </div>
+
+      {/* Projects */}
+      {member.projects && member.projects.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">
+              Projects ({member.projects.length})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="pb-2 pr-4 font-medium">Path</th>
+                    <th className="pb-2 pr-4 font-medium">Git Repo</th>
+                    <th className="pb-2 pr-4 font-medium">First Seen</th>
+                    <th className="pb-2 font-medium">Last Seen</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {member.projects
+                    .sort((a, b) => b.lastSeen.localeCompare(a.lastSeen))
+                    .map((project) => (
+                      <tr
+                        key={project.path}
+                        className="border-b border-border/50 last:border-0"
+                      >
+                        <td className="py-2 pr-4 font-mono text-xs">
+                          {project.path}
+                        </td>
+                        <td className="py-2 pr-4 font-mono text-xs text-muted-foreground">
+                          {project.gitRepo || '—'}
+                        </td>
+                        <td className="py-2 pr-4 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(project.firstSeen).toLocaleDateString()}
+                        </td>
+                        <td className="py-2 text-xs text-muted-foreground whitespace-nowrap">
+                          {new Date(project.lastSeen).toLocaleDateString()}
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

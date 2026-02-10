@@ -51,8 +51,22 @@ export async function pushCommand(options: {
     }
   }
 
+  // Show project and prompt info
+  if (result.projects.length > 0) {
+    console.log(`  Projects discovered: ${result.projects.length}`);
+    for (const p of result.projects.slice(0, 5)) {
+      console.log(`    - ${p.path}${p.gitRepo ? ` (${p.gitRepo})` : ''}`);
+    }
+    if (result.projects.length > 5) {
+      console.log(`    ... and ${result.projects.length - 5} more`);
+    }
+  }
+  if (result.prompts.length > 0) {
+    console.log(`  Prompts collected: ${result.prompts.length}`);
+  }
+
   // Nothing to sync
-  if (result.entries.length === 0) {
+  if (result.entries.length === 0 && result.prompts.length === 0 && result.projects.length === 0) {
     console.log('\nNo new data to sync.');
     return;
   }
@@ -60,12 +74,14 @@ export async function pushCommand(options: {
   // Dry run - don't actually push
   if (options.dryRun) {
     console.log('\nDry run - not pushing to server.');
-    console.log('Sample entries:');
-    for (const entry of result.entries.slice(0, 3)) {
-      console.log(`  - ${entry.timestamp} | ${entry.model} | ${entry.usage.input_tokens} in / ${entry.usage.output_tokens} out`);
-    }
-    if (result.entries.length > 3) {
-      console.log(`  ... and ${result.entries.length - 3} more`);
+    if (result.entries.length > 0) {
+      console.log('Sample entries:');
+      for (const entry of result.entries.slice(0, 3)) {
+        console.log(`  - ${entry.timestamp} | ${entry.model} | ${entry.usage.input_tokens} in / ${entry.usage.output_tokens} out`);
+      }
+      if (result.entries.length > 3) {
+        console.log(`  ... and ${result.entries.length - 3} more`);
+      }
     }
     return;
   }
@@ -73,8 +89,12 @@ export async function pushCommand(options: {
   // Push to server
   console.log(`\nPushing ${result.entries.length} entries to server...`);
 
-  const pushResult = await pushToServer(result.entries, config, (batch, total) => {
-    process.stdout.write(`\r  Batch ${batch}/${total}...`);
+  const pushResult = await pushToServer(result.entries, config, {
+    projects: result.projects,
+    prompts: result.prompts,
+    onProgress: (batch, total) => {
+      process.stdout.write(`\r  Batch ${batch}/${total}...`);
+    },
   });
 
   console.log('\n');
@@ -98,6 +118,10 @@ export async function pushCommand(options: {
     seen_request_ids: [
       ...state.seen_request_ids,
       ...result.entries.map((e) => e.request_id),
+    ],
+    seen_prompt_uuids: [
+      ...(state.seen_prompt_uuids || []),
+      ...result.prompts.map((p) => p.uuid),
     ],
   };
 

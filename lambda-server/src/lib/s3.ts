@@ -10,6 +10,7 @@ import {
   HeadObjectCommand,
   ListObjectsV2Command,
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 // S3 Client - reused across Lambda invocations
 const s3Client = new S3Client({
@@ -258,6 +259,31 @@ export function getMetaKey(): string {
   return 'meta/last-processed.json';
 }
 
+/**
+ * Get S3 key for member project tracking
+ * Format: projects/{memberId}.json
+ */
+export function getProjectsKey(memberId: string): string {
+  return `projects/${memberId}.json`;
+}
+
+/**
+ * Get S3 key for prompt audit logs
+ * Format: prompts/{memberId}/{year}-{month}.json
+ */
+export function getPromptsKey(memberId: string, year: number, month: number): string {
+  const monthStr = month.toString().padStart(2, '0');
+  return `prompts/${memberId}/${year}-${monthStr}.json`;
+}
+
+/**
+ * Get S3 key for admin command queue
+ * Format: commands/{memberId}/queue.json
+ */
+export function getCommandQueueKey(memberId: string): string {
+  return `commands/${memberId}/queue.json`;
+}
+
 // ============================================
 // Retry Logic for Concurrent Writes
 // ============================================
@@ -356,6 +382,29 @@ export async function mapWithConcurrency<T, R>(
 
   await Promise.all(workers);
   return results;
+}
+
+// ============================================
+// Release Management Keys
+// ============================================
+
+export function getReleasesVersionKey(): string {
+  return 'releases/version.json';
+}
+
+export function getReleasesFileKey(filename: string): string {
+  return `releases/${filename}`;
+}
+
+/**
+ * Generate a presigned download URL for an S3 object
+ */
+export async function getPresignedDownloadUrl(key: string, expiresIn: number = 600): Promise<string> {
+  const command = new GetObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+  });
+  return getSignedUrl(s3Client, command, { expiresIn });
 }
 
 export { s3Client, BUCKET_NAME };

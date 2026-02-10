@@ -96,6 +96,7 @@ export interface AgentState {
   last_sync_records: number;
   total_synced_records: number;
   seen_request_ids: string[];
+  seen_prompt_uuids: string[];
 }
 
 /**
@@ -117,6 +118,7 @@ export const DEFAULT_STATE: AgentState = {
   last_sync_records: 0,
   total_synced_records: 0,
   seen_request_ids: [],
+  seen_prompt_uuids: [],
 };
 
 /**
@@ -194,10 +196,11 @@ export function loadState(): AgentState {
 export function saveState(state: AgentState): void {
   ensureConfigDir();
 
-  // Keep only last 10000 request IDs to prevent file from growing too large
+  // Keep only last 10000 IDs to prevent file from growing too large
   const trimmedState = {
     ...state,
     seen_request_ids: state.seen_request_ids.slice(-10000),
+    seen_prompt_uuids: (state.seen_prompt_uuids || []).slice(-10000),
   };
 
   writeFileSync(STATE_FILE, JSON.stringify(trimmedState, null, 2));
