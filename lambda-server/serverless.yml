@@ -22,6 +22,8 @@ provider:
     ALLOWED_ORIGINS: ${self:custom.allowedOrigins.${self:provider.stage}, 'http://localhost:3000'}
     # Aggregator function name for API trigger
     AGGREGATOR_FUNCTION_NAME: ${self:service}-${self:provider.stage}-aggregator
+    # JWT secret for auth tokens
+    JWT_SECRET: ${env:JWT_SECRET, 'dev-secret-key-do-not-use-in-production'}
 
   # IAM permissions for S3 and Lambda invocation
   iam:
@@ -37,6 +39,12 @@ provider:
           Resource:
             - arn:aws:s3:::${self:custom.bucketName}
             - arn:aws:s3:::${self:custom.bucketName}/*
+        # KMS permissions for SSE-KMS encrypted S3 objects
+        - Effect: Allow
+          Action:
+            - kms:Decrypt
+            - kms:GenerateDataKey
+          Resource: '*'
         # Lambda invocation (for manual aggregator trigger)
         - Effect: Allow
           Action:
@@ -152,11 +160,12 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         BucketName: ${self:custom.bucketName}
-        # Server-side encryption (SSE-S3)
+        # Server-side encryption (SSE-KMS with bucket key for cost optimization)
         BucketEncryption:
           ServerSideEncryptionConfiguration:
             - ServerSideEncryptionByDefault:
-                SSEAlgorithm: AES256
+                SSEAlgorithm: aws:kms
+              BucketKeyEnabled: true
         # Block all public access
         PublicAccessBlockConfiguration:
           BlockPublicAcls: true
@@ -201,6 +210,7 @@ custom:
   # CORS allowed origins per stage
   allowedOrigins:
     dev: 'http://localhost:3000,http://127.0.0.1:3000,https://d1ohuii7czj4jp.cloudfront.net'
+    jit: 'http://localhost:3000,http://127.0.0.1:3000,https://dg2i6v0xgt3mw.cloudfront.net'
     prod: 'https://d1ohuii7czj4jp.cloudfront.net'
   serverless-offline:
     httpPort: 3001

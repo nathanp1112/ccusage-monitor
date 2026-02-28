@@ -73,6 +73,18 @@ interface LambdaMemberDetailResponse {
   }
 }
 
+/**
+ * Normalize model names into families: Opus, Sonnet, Haiku, etc.
+ * e.g. "claude-3-opus-20240229" → "Opus", "claude-sonnet-4-20250514" → "Sonnet"
+ */
+function normalizeModelFamily(model: string): string {
+  const lower = model.toLowerCase()
+  if (lower.includes('opus')) return 'Opus'
+  if (lower.includes('sonnet')) return 'Sonnet'
+  if (lower.includes('haiku')) return 'Haiku'
+  return model // keep as-is for unknown models (e.g. "<synthetic>")
+}
+
 // Short month names for button display
 const months = [
   { value: 0, label: 'Jan' },
@@ -142,22 +154,45 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
     return currentMonthData.totals
   }, [currentMonthData?.totals])
 
-  // Use pre-computed model breakdown from Lambda (sorted by cost)
+  // Use pre-computed model breakdown from Lambda, merged by model family
   const modelData = useMemo(() => {
     if (!currentMonthData?.modelBreakdown) return []
-    return currentMonthData.modelBreakdown
-      .map((mb) => ({
-        model: mb.model,
-        costUsd: mb.costUsd,
-        percentage: mb.percentage,
+    const familyMap = new Map<string, number>()
+    for (const mb of currentMonthData.modelBreakdown) {
+      const family = normalizeModelFamily(mb.model)
+      familyMap.set(family, (familyMap.get(family) || 0) + mb.costUsd)
+    }
+    const totalCost = Array.from(familyMap.values()).reduce((a, b) => a + b, 0)
+    return Array.from(familyMap.entries())
+      .map(([model, costUsd]) => ({
+        model,
+        costUsd,
+        percentage: totalCost > 0 ? Math.round((costUsd / totalCost) * 100) : 0,
       }))
       .sort((a, b) => b.costUsd - a.costUsd)
   }, [currentMonthData?.modelBreakdown])
 
-  // Daily model usage for stacked bar chart (from API)
+  // Daily model usage for stacked bar chart, merged by model family
   const dailyModelUsage = useMemo((): DailyModelData[] => {
     if (!currentMonthData?.dailyModelUsage) return []
-    return currentMonthData.dailyModelUsage
+    return currentMonthData.dailyModelUsage.map((day) => {
+      const familyMap = new Map<string, { inputTokens: number; outputTokens: number; costUsd: number }>()
+      for (const m of day.models) {
+        const family = normalizeModelFamily(m.model)
+        const existing = familyMap.get(family) || { inputTokens: 0, outputTokens: 0, costUsd: 0 }
+        existing.inputTokens += m.inputTokens
+        existing.outputTokens += m.outputTokens
+        existing.costUsd += m.costUsd
+        familyMap.set(family, existing)
+      }
+      return {
+        date: day.date,
+        models: Array.from(familyMap.entries()).map(([model, data]) => ({
+          model,
+          ...data,
+        })),
+      }
+    })
   }, [currentMonthData?.dailyModelUsage])
 
   // Heat map data (uses dailyUsage with recordCount)

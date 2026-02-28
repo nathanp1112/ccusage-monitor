@@ -15,7 +15,7 @@ interface ModelDistributionChartProps {
   className?: string
 }
 
-const COLORS = [
+const FALLBACK_COLORS = [
   'hsl(var(--chart-1))',
   'hsl(var(--chart-2))',
   'hsl(var(--chart-3))',
@@ -24,17 +24,28 @@ const COLORS = [
   'hsl(var(--chart-6))',
 ]
 
+// Fixed colors per model family (matches daily-model-usage-chart)
+const MODEL_COLORS: Record<string, string> = {
+  Opus: '#8b5cf6',
+  Sonnet: '#3b82f6',
+  Haiku: '#10b981',
+}
+
+function getModelColor(model: string, index: number): string {
+  return MODEL_COLORS[model] || FALLBACK_COLORS[index % FALLBACK_COLORS.length]
+}
+
 export function ModelDistributionChart({
   data,
   title = 'Model Distribution',
   className,
 }: ModelDistributionChartProps) {
   const formatModel = (model: string) => {
-    // Shorten model names for display
-    if (model.includes('sonnet')) return 'Sonnet'
-    if (model.includes('opus')) return 'Opus'
-    if (model.includes('haiku')) return 'Haiku'
-    return model.split('-').slice(0, 2).join('-')
+    const lower = model.toLowerCase()
+    if (lower.includes('opus')) return 'Opus'
+    if (lower.includes('sonnet')) return 'Sonnet'
+    if (lower.includes('haiku')) return 'Haiku'
+    return model
   }
 
   const formatCost = (value: number) => `$${value.toFixed(2)}`
@@ -66,10 +77,10 @@ export function ModelDistributionChart({
                 }
                 labelLine={{ stroke: 'hsl(var(--muted-foreground))' }}
               >
-                {data.map((_, index) => (
+                {data.map((entry, index) => (
                   <Cell
                     key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
+                    fill={getModelColor(entry.model, index)}
                   />
                 ))}
               </Pie>

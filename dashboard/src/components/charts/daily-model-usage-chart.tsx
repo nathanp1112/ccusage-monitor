@@ -20,11 +20,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 
-// Model colors - fixed colors for each model type
+// Model colors - fixed colors for each model family
 const MODEL_COLORS: Record<string, string> = {
-  opus: '#8b5cf6',    // violet - premium model
-  sonnet: '#3b82f6',  // blue - balanced model
-  haiku: '#10b981',   // emerald - fast model
+  Opus: '#8b5cf6',    // violet - premium model
+  Sonnet: '#3b82f6',  // blue - balanced model
+  Haiku: '#10b981',   // emerald - fast model
   default: '#6b7280', // gray - unknown models
 }
 
@@ -47,10 +47,11 @@ interface DailyModelUsageChartProps {
 type TokenType = 'input' | 'output' | 'both'
 
 function getShortModelName(model: string): string {
-  if (model.includes('opus')) return 'opus'
-  if (model.includes('sonnet')) return 'sonnet'
-  if (model.includes('haiku')) return 'haiku'
-  return model.split('-').slice(0, 2).join('-')
+  const lower = model.toLowerCase()
+  if (lower.includes('opus')) return 'Opus'
+  if (lower.includes('sonnet')) return 'Sonnet'
+  if (lower.includes('haiku')) return 'Haiku'
+  return model
 }
 
 export function DailyModelUsageChart({

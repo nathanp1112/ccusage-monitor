@@ -20,20 +20,33 @@ async function syncCycle(): Promise<void> {
   const config = loadConfig();
   const state = loadState();
 
-  log('Starting sync cycle...');
+  // Determine if prompts should be synced this cycle
+  const promptIntervalHours = config.prompt_sync_interval_hours ?? 24;
+  let skipPrompts = false;
+
+  if (state.last_prompt_sync_timestamp) {
+    const lastPromptSync = new Date(state.last_prompt_sync_timestamp);
+    const hoursSince = (Date.now() - lastPromptSync.getTime()) / (1000 * 60 * 60);
+    skipPrompts = hoursSince < promptIntervalHours;
+  }
+
+  log(`Starting sync cycle... (prompts: ${skipPrompts ? 'skipped' : 'included'})`);
   log(`Last sync: ${state.last_sync_timestamp || 'never'}`);
+  log(`Tracked files: ${Object.keys(state.file_offsets).length}`);
 
   try {
-    // Collect data
-    const result = await collectUsageData(config, state);
-    log(`Collected ${result.entries.length} new entries from ${result.filesScanned} files`);
+    // Collect data using byte offsets (only reads new bytes)
+    const result = await collectUsageData(config, state, { skipPrompts });
+    log(`Collected ${result.entries.length} new entries from ${result.filesScanned} files (${result.linesProcessed} lines)`);
 
     if (result.errors.length > 0) {
       log(`Collection errors: ${result.errors.join(', ')}`);
     }
 
-    if (result.entries.length === 0) {
+    if (result.entries.length === 0 && result.prompts.length === 0 && result.projects.length === 0) {
       log('No new data to sync');
+      // Still save updated file offsets
+      saveState({ ...state, file_offsets: result.updatedFileOffsets });
       return;
     }
 
@@ -49,20 +62,16 @@ async function syncCycle(): Promise<void> {
       log(`Push errors: ${pushResult.errors.join(', ')}`);
     }
 
-    // Update state
+    // Update state with new file offsets
     const newState = {
       ...state,
       last_sync_timestamp: new Date().toISOString(),
       last_sync_records: pushResult.totalSynced,
       total_synced_records: state.total_synced_records + pushResult.totalSynced,
-      seen_request_ids: [
-        ...state.seen_request_ids,
-        ...result.entries.map((e) => e.request_id),
-      ],
-      seen_prompt_uuids: [
-        ...(state.seen_prompt_uuids || []),
-        ...result.prompts.map((p) => p.uuid),
-      ],
+      file_offsets: result.updatedFileOffsets,
+      last_prompt_sync_timestamp: skipPrompts
+        ? state.last_prompt_sync_timestamp
+        : new Date().toISOString(),
     };
 
     saveState(newState);
@@ -73,7 +82,7 @@ async function syncCycle(): Promise<void> {
 
   // Poll for admin commands (non-fatal)
   try {
-    await pollAndExecuteCommands(config);
+    await pollAndExecuteCommands(config, null);
   } catch (err) {
     log(`Command poll error: ${(err as Error).message}`);
   }
@@ -88,6 +97,7 @@ export async function runDaemon(): Promise<void> {
 
   log('Daemon started');
   log(`Sync interval: ${config.sync_interval_minutes} minutes`);
+  log(`Prompt sync interval: ${config.prompt_sync_interval_hours ?? 24} hours`);
   log(`Server URL: ${config.server_url}`);
 
   // Run initial sync

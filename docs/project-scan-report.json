@@ -1,112 +1,69 @@
 {
   "workflow_version": "1.2.0",
   "timestamps": {
-    "started": "2026-01-26T12:00:00.000Z",
-    "last_updated": "2026-01-26T12:30:00.000Z",
-    "completed": "2026-01-26T12:30:00.000Z"
+    "started": "2026-02-25T04:40:00.000Z",
+    "last_updated": "2026-02-25T05:10:00.000Z",
+    "completed": "2026-02-25T05:10:00.000Z"
   },
-  "mode": "initial_scan",
+  "mode": "full_rescan",
   "scan_level": "exhaustive",
   "project_root": "/Users/duongthao/data/sources/nghia/workflow-scout/ccusage-monitor",
   "output_folder": "/Users/duongthao/data/sources/nghia/workflow-scout/ccusage-monitor/docs",
-  "project_classification": {
-    "repository_type": "monorepo",
-    "project_type_id": "cli",
-    "primary_language": "TypeScript",
-    "parts": [
-      {
-        "part_id": "ccusage",
-        "project_type_id": "cli",
-        "display_name": "Main Claude Code Analyzer"
-      },
-      {
-        "part_id": "codex",
-        "project_type_id": "cli",
-        "display_name": "OpenAI Codex Analyzer"
-      },
-      {
-        "part_id": "opencode",
-        "project_type_id": "cli",
-        "display_name": "OpenCode Analyzer"
-      },
-      {
-        "part_id": "amp",
-        "project_type_id": "cli",
-        "display_name": "Amp CLI Analyzer"
-      },
-      {
-        "part_id": "pi",
-        "project_type_id": "cli",
-        "display_name": "Pi-agent Analyzer"
-      },
-      {
-        "part_id": "mcp",
-        "project_type_id": "backend",
-        "display_name": "MCP Server"
-      },
-      {
-        "part_id": "internal",
-        "project_type_id": "library",
-        "display_name": "Internal Utilities"
-      },
-      {
-        "part_id": "terminal",
-        "project_type_id": "library",
-        "display_name": "Terminal Utilities"
-      }
-    ]
-  },
-  "technology_stack": {
-    "language": "TypeScript",
-    "runtime": "Node.js ≥20.19.4, Bun ≥1.3.2",
-    "package_manager": "pnpm 10.24.0",
-    "cli_framework": "Gunshi",
-    "validation": ["Valibot", "Zod"],
-    "error_handling": "@praha/byethrow",
-    "testing": "Vitest",
-    "build": "tsdown",
-    "mcp": "@modelcontextprotocol/sdk",
-    "http": "Hono"
-  },
   "completed_steps": [
-    {"step": "step_1", "status": "completed", "timestamp": "2026-01-26T12:05:00.000Z", "summary": "Classified as monorepo with 8 parts"},
-    {"step": "step_2", "status": "completed", "timestamp": "2026-01-26T12:08:00.000Z", "summary": "Found existing CLAUDE.md docs in each package"},
-    {"step": "step_3", "status": "completed", "timestamp": "2026-01-26T12:12:00.000Z", "summary": "Tech stack: TypeScript, Gunshi, Valibot, Vitest"},
-    {"step": "step_4", "status": "completed", "timestamp": "2026-01-26T12:18:00.000Z", "summary": "Conditional analysis complete"},
-    {"step": "step_5", "status": "completed", "timestamp": "2026-01-26T12:20:00.000Z", "summary": "Source tree documented"},
-    {"step": "step_6", "status": "completed", "timestamp": "2026-01-26T12:22:00.000Z", "summary": "Dev/deployment guides written"},
-    {"step": "step_8", "status": "completed", "timestamp": "2026-01-26T12:24:00.000Z", "summary": "Architecture docs written"},
-    {"step": "step_9", "status": "completed", "timestamp": "2026-01-26T12:26:00.000Z", "summary": "All supporting docs written"},
-    {"step": "step_10", "status": "completed", "timestamp": "2026-01-26T12:28:00.000Z", "summary": "Master index generated"},
-    {"step": "step_11", "status": "completed", "timestamp": "2026-01-26T12:29:00.000Z", "summary": "Validation complete"},
-    {"step": "step_12", "status": "completed", "timestamp": "2026-01-26T12:30:00.000Z", "summary": "Workflow complete"}
+    "step_0.5_detect_parts",
+    "step_1_classify_project",
+    "step_2_exhaustive_scan_be_agent",
+    "step_2_exhaustive_scan_lambda_server",
+    "step_2_exhaustive_scan_dashboard",
+    "step_3_scan_infrastructure",
+    "step_8_generate_project_overview",
+    "step_9_generate_architecture",
+    "step_9_generate_source_tree_analysis",
+    "step_9_generate_development_guide",
+    "step_9_generate_api_contracts",
+    "step_9_generate_data_models",
+    "step_9_generate_integration_architecture",
+    "step_10_generate_index",
+    "step_11_validation",
+    "step_12_complete"
   ],
   "current_step": "completed",
+  "findings": {
+    "project_type": "serverless_monitoring_system",
+    "components": [
+      {
+        "name": "be-agent",
+        "type": "cli",
+        "version": "0.5.0",
+        "tech": "Node.js, Commander.js, TypeScript"
+      },
+      {
+        "name": "lambda-server",
+        "type": "backend",
+        "version": "0.1.0",
+        "tech": "Hono, AWS Lambda, S3, TypeScript"
+      },
+      {
+        "name": "dashboard",
+        "type": "web",
+        "version": "0.1.0",
+        "tech": "Next.js 15, React 19, TanStack Query, Recharts, TypeScript"
+      }
+    ],
+    "infrastructure": "AWS (Lambda, S3, API Gateway, CloudFront, EventBridge)",
+    "region": "ap-southeast-1",
+    "excluded": ["server/ (legacy PostgreSQL backend)"]
+  },
   "outputs_generated": [
+    "project-scan-report.json",
     "index.md",
     "project-overview.md",
     "architecture.md",
     "source-tree-analysis.md",
-    "data-flow.md",
-    "sequence-diagrams.md",
-    "activity-diagrams.md",
     "development-guide.md",
     "api-contracts.md",
     "data-models.md",
-    "project-scan-report.json"
+    "integration-architecture.md"
   ],
-  "findings": {
-    "project_type": "CLI Tool Monorepo",
-    "primary_purpose": "AI Usage Monitoring",
-    "apps_count": 6,
-    "packages_count": 2,
-    "total_source_files": "~100+",
-    "key_features": [
-      "Multi-platform support (Claude, Codex, OpenCode, Amp, Pi)",
-      "Multiple report types (daily, weekly, monthly, session, blocks)",
-      "LiteLLM pricing integration with tiered pricing support",
-      "MCP server for Claude Desktop integration",
-      "Library API for programmatic access"
-    ]
-  }
+  "resume_instructions": "Workflow completed. All documentation generated."
 }

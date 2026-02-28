@@ -7,6 +7,10 @@ build/
 dist/
 out/
 .next/
+*.tsbuildinfo
+
+# Packed artifacts
+*.tgz
 
 # Environment & credentials
 .env
@@ -37,15 +41,17 @@ yarn-error.log*
 # Testing
 coverage/
 
-# TypeScript
-*.tsbuildinfo
-
 # Serverless
 .serverless/
 
-# Project-specific
+# S3 backup data
+.s3-backup/
+
+# Claude Code / CCS internals
 .claude/
 .agents/
 .context/
 _bmad*/
-scripts/
+
+# Auto-generated memory (per-instance)
+memory/

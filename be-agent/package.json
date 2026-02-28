@@ -1,6 +1,6 @@
 {
   "name": "ccusage-agent",
-  "version": "0.3.1",
+  "version": "0.5.0",
   "description": "Agent for collecting and syncing Claude Code usage data",
   "type": "module",
   "bin": {
@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "dev": "tsx src/index.ts",
-    "build": "tsup src/index.ts --format esm --dts --clean",
+    "build": "tsup",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src/",

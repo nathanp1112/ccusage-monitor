@@ -39,16 +39,27 @@ type MetricType = 'cost' | 'tokens' | 'requests'
 const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 // Heat map color intensity levels (5 levels)
+// Requests: white (0), very light green (1-39), light green (40-100), medium green (100-300), bold green (300-1000), purple (>1000)
 const HEAT_COLORS = [
   'bg-muted',
+  'bg-emerald-100 dark:bg-emerald-950',
   'bg-emerald-200 dark:bg-emerald-900',
   'bg-emerald-400 dark:bg-emerald-700',
   'bg-emerald-600 dark:bg-emerald-500',
-  'bg-emerald-800 dark:bg-emerald-300',
+  'bg-purple-600 dark:bg-purple-400',
 ]
 
-function getHeatLevel(value: number, max: number): number {
-  if (value === 0 || max === 0) return 0
+function getHeatLevel(value: number, max: number, metric: MetricType): number {
+  if (value === 0) return 0
+  if (metric === 'requests') {
+    if (value < 40) return 1
+    if (value < 100) return 2
+    if (value <= 300) return 3
+    if (value <= 1000) return 4
+    return 5
+  }
+  // For cost and tokens, use relative scaling
+  if (max === 0) return 0
   const ratio = value / max
   if (ratio <= 0.25) return 1
   if (ratio <= 0.5) return 2
@@ -126,7 +137,7 @@ export function UsageHeatMap({
             : dayData.recordCount
         : 0
 
-      const heatLevel = getHeatLevel(value, maxValue)
+      const heatLevel = getHeatLevel(value, maxValue, metric)
 
       currentWeek.push({ day, date: dateStr, value, heatLevel })
 
@@ -207,7 +218,7 @@ export function UsageHeatMap({
                               : cell.heatLevel === -1
                                 ? 'bg-muted'
                                 : HEAT_COLORS[cell.heatLevel],
-                            cell.heatLevel >= 3 && 'text-white dark:text-black',
+                            cell.heatLevel >= 4 && 'text-white dark:text-black',
                             cell.day !== null && 'cursor-pointer hover:ring-2 hover:ring-ring'
                           )}
                         >
@@ -237,19 +248,39 @@ export function UsageHeatMap({
             </div>
 
             {/* Legend */}
-            <div className={cn(
-              'flex items-center justify-end gap-1 mt-3 text-muted-foreground',
-              compact ? 'text-[10px]' : 'text-xs'
-            )}>
-              <span>Less</span>
-              {HEAT_COLORS.map((color, index) => (
-                <div
-                  key={index}
-                  className={cn('rounded-sm', color, compact ? 'w-2 h-2' : 'w-3 h-3')}
-                />
-              ))}
-              <span>More</span>
-            </div>
+            {metric === 'requests' ? (
+              <div className={cn(
+                'flex items-center justify-end gap-1 mt-3 text-muted-foreground',
+                compact ? 'text-[10px]' : 'text-xs'
+              )}>
+                {[
+                  { color: HEAT_COLORS[1], label: '<40' },
+                  { color: HEAT_COLORS[2], label: '40-100' },
+                  { color: HEAT_COLORS[3], label: '100-300' },
+                  { color: HEAT_COLORS[4], label: '300-1000' },
+                  { color: HEAT_COLORS[5], label: '>1000' },
+                ].map(({ color, label }) => (
+                  <div key={label} className="flex items-center gap-0.5">
+                    <div className={cn('rounded-sm', color, compact ? 'w-2 h-2' : 'w-3 h-3')} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className={cn(
+                'flex items-center justify-end gap-1 mt-3 text-muted-foreground',
+                compact ? 'text-[10px]' : 'text-xs'
+              )}>
+                <span>Less</span>
+                {HEAT_COLORS.map((color, index) => (
+                  <div
+                    key={index}
+                    className={cn('rounded-sm', color, compact ? 'w-2 h-2' : 'w-3 h-3')}
+                  />
+                ))}
+                <span>More</span>
+              </div>
+            )}
           </div>
         </TooltipProvider>
       </CardContent>

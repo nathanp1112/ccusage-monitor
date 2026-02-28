@@ -22,10 +22,14 @@ interface PollResponse {
 /**
  * Poll server for pending commands and execute them
  */
-export async function pollAndExecuteCommands(config: AgentConfig): Promise<void> {
+export async function pollAndExecuteCommands(config: AgentConfig, accessToken?: string | null): Promise<void> {
   // 1. Poll for pending commands
   const url = `${config.server_url}/api/agent/commands?email=${encodeURIComponent(config.email)}`;
-  const response = await request(url, { method: 'GET' });
+  const headers: Record<string, string> = {};
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
+  const response = await request(url, { method: 'GET', headers });
   const body = (await response.body.json()) as PollResponse;
 
   if (!body.success || !body.commands || body.commands.length === 0) {
@@ -46,7 +50,7 @@ export async function pollAndExecuteCommands(config: AgentConfig): Promise<void>
 
     // 3. ACK the command
     try {
-      await ackCommand(config, cmd.id, status, result);
+      await ackCommand(config, cmd.id, status, result, accessToken);
     } catch (err) {
       // Log but don't fail — command was already executed
       console.error(`Failed to ACK command ${cmd.id}:`, (err as Error).message);
@@ -148,13 +152,18 @@ async function ackCommand(
   config: AgentConfig,
   commandId: string,
   status: 'acked' | 'failed',
-  result: string
+  result: string,
+  accessToken?: string | null
 ): Promise<void> {
   const url = `${config.server_url}/api/agent/commands/${commandId}/ack`;
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
 
   await request(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify({
       email: config.email,
       status,

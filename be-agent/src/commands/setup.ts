@@ -2,6 +2,7 @@ import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { homedir, platform } from 'node:os';
+import { request } from 'undici';
 import {
   saveConfig,
   loadConfig,
@@ -201,6 +202,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
 
   // 1. Save configuration
   console.log('Step 1: Saving configuration...');
+  const existingConfig = loadConfig();
   const config = {
     ...DEFAULT_CONFIG,
     server_url: options.serverUrl,
@@ -235,7 +237,24 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
     console.log('  You can manually run: ccusage-agent sync');
   }
 
-  // 4. Summary
+  // 4. Fetch register link from server
+  console.log('\nStep 4: Checking registration...');
+  try {
+    const res = await request(
+      `${options.serverUrl}/api/register/link?email=${encodeURIComponent(options.email)}`,
+      { method: 'GET', headersTimeout: 5000, bodyTimeout: 5000 }
+    );
+    const data = (await res.body.json()) as { success: boolean; link?: string };
+    if (data.success && data.link) {
+      console.log(`  ✓ Dashboard link: ${data.link}`);
+    } else {
+      console.log('  ⚠ No registration link found for this email');
+    }
+  } catch {
+    console.log('  ⚠ Could not reach server (will retry on first sync)');
+  }
+
+  // 5. Summary
   console.log('\n' + '─'.repeat(50));
   console.log('Setup complete!\n');
   console.log('The agent will:');

@@ -8,7 +8,11 @@ import { pushToServer } from '../lib/pusher.js';
 export async function pushCommand(options: {
   force?: boolean;
   dryRun?: boolean;
+  noPrompts?: boolean;
+  verbose?: boolean;
 }): Promise<void> {
+  const verbose = options.verbose ?? false;
+
   // Check configuration
   if (!isConfigured()) {
     console.error('Error: Agent not configured. Run "ccusage-agent setup --server <url> --email <email>" first.');
@@ -18,63 +22,74 @@ export async function pushCommand(options: {
   const config = loadConfig();
   let state = loadState();
 
-  // Force mode - reset last sync timestamp to collect all data
+  // Force mode - reset file offsets to re-read all files from scratch
   if (options.force) {
-    console.log('Force mode: collecting all historical data...\n');
-    state = { ...state, last_sync_timestamp: null };
+    if (verbose) console.log('Force mode: collecting all historical data...\n');
+    state = { ...state, file_offsets: {} };
   }
 
-  console.log('Collecting usage data...');
-  console.log(`  Last sync: ${state.last_sync_timestamp || 'never'}`);
-  console.log(`  Scanning paths:`);
+  // Always print scanned folders so users know what's being watched — DO NOT REMOVE
+  console.log('Scanning:');
   for (const p of config.claude_paths) {
-    console.log(`    - ${p}`);
+    console.log(`  ${p}`);
+  }
+
+  if (verbose) {
+    console.log(`Last sync: ${state.last_sync_timestamp || 'never'}`);
+    console.log(`Tracked files: ${Object.keys(state.file_offsets).length}`);
   }
 
   // Collect data
   const startTime = Date.now();
-  const result = await collectUsageData(config, state);
+  const result = await collectUsageData(config, state, {
+    skipPrompts: options.noPrompts ?? false,
+  });
   const collectTime = Date.now() - startTime;
 
-  console.log(`\nCollection complete in ${collectTime}ms:`);
-  console.log(`  Files scanned: ${result.filesScanned}`);
-  console.log(`  Lines processed: ${result.linesProcessed}`);
-  console.log(`  New entries found: ${result.entries.length}`);
+  if (verbose) {
+    console.log(`\nCollection complete in ${collectTime}ms:`);
+    console.log(`  Files scanned: ${result.filesScanned}`);
+    console.log(`  Lines processed: ${result.linesProcessed}`);
+    console.log(`  New entries found: ${result.entries.length}`);
+  }
 
   if (result.errors.length > 0) {
-    console.log(`  Errors: ${result.errors.length}`);
+    console.error(`Collection errors: ${result.errors.length}`);
     for (const err of result.errors.slice(0, 5)) {
-      console.log(`    - ${err}`);
+      console.error(`  - ${err}`);
     }
     if (result.errors.length > 5) {
-      console.log(`    ... and ${result.errors.length - 5} more`);
+      console.error(`  ... and ${result.errors.length - 5} more`);
     }
   }
 
-  // Show project and prompt info
-  if (result.projects.length > 0) {
-    console.log(`  Projects discovered: ${result.projects.length}`);
-    for (const p of result.projects.slice(0, 5)) {
-      console.log(`    - ${p.path}${p.gitRepo ? ` (${p.gitRepo})` : ''}`);
+  if (verbose) {
+    if (result.projects.length > 0) {
+      console.log(`  Projects discovered: ${result.projects.length}`);
+      for (const p of result.projects.slice(0, 5)) {
+        console.log(`    - ${p.path}${p.gitRepo ? ` (${p.gitRepo})` : ''}`);
+      }
+      if (result.projects.length > 5) {
+        console.log(`    ... and ${result.projects.length - 5} more`);
+      }
     }
-    if (result.projects.length > 5) {
-      console.log(`    ... and ${result.projects.length - 5} more`);
+    if (result.prompts.length > 0) {
+      console.log(`  Prompts collected: ${result.prompts.length}`);
     }
-  }
-  if (result.prompts.length > 0) {
-    console.log(`  Prompts collected: ${result.prompts.length}`);
   }
 
   // Nothing to sync
   if (result.entries.length === 0 && result.prompts.length === 0 && result.projects.length === 0) {
-    console.log('\nNo new data to sync.');
+    console.log('No new data to sync.');
+    // Still save updated file offsets so we don't re-scan unchanged files
+    saveState({ ...state, file_offsets: result.updatedFileOffsets });
     return;
   }
 
   // Dry run - don't actually push
   if (options.dryRun) {
-    console.log('\nDry run - not pushing to server.');
-    if (result.entries.length > 0) {
+    console.log(`Dry run: ${result.entries.length} entries, ${result.prompts.length} prompts, ${result.projects.length} projects`);
+    if (verbose && result.entries.length > 0) {
       console.log('Sample entries:');
       for (const entry of result.entries.slice(0, 3)) {
         console.log(`  - ${entry.timestamp} | ${entry.model} | ${entry.usage.input_tokens} in / ${entry.usage.output_tokens} out`);
@@ -87,44 +102,39 @@ export async function pushCommand(options: {
   }
 
   // Push to server
-  console.log(`\nPushing ${result.entries.length} entries to server...`);
+  if (verbose) {
+    console.log(`\nPushing ${result.entries.length} entries to server...`);
+  }
 
   const pushResult = await pushToServer(result.entries, config, {
     projects: result.projects,
     prompts: result.prompts,
-    onProgress: (batch, total) => {
-      process.stdout.write(`\r  Batch ${batch}/${total}...`);
-    },
+    onProgress: verbose
+      ? (batch, total) => { process.stdout.write(`\r  Batch ${batch}/${total}...`); }
+      : undefined,
   });
 
-  console.log('\n');
-  console.log('Sync complete:');
-  console.log(`  Synced: ${pushResult.totalSynced}`);
-  console.log(`  Skipped (duplicates): ${pushResult.totalSkipped}`);
+  if (verbose) console.log('');
 
   if (pushResult.errors.length > 0) {
-    console.log(`  Errors: ${pushResult.errors.length}`);
+    console.error(`Sync errors: ${pushResult.errors.length}`);
     for (const err of pushResult.errors) {
-      console.log(`    - ${err}`);
+      console.error(`  - ${err}`);
     }
   }
 
-  // Update state
+  // Update state with new file offsets
   const newState = {
     ...state,
     last_sync_timestamp: new Date().toISOString(),
     last_sync_records: pushResult.totalSynced,
     total_synced_records: state.total_synced_records + pushResult.totalSynced,
-    seen_request_ids: [
-      ...state.seen_request_ids,
-      ...result.entries.map((e) => e.request_id),
-    ],
-    seen_prompt_uuids: [
-      ...(state.seen_prompt_uuids || []),
-      ...result.prompts.map((p) => p.uuid),
-    ],
+    file_offsets: result.updatedFileOffsets,
+    last_prompt_sync_timestamp: options.noPrompts
+      ? state.last_prompt_sync_timestamp
+      : new Date().toISOString(),
   };
 
   saveState(newState);
-  console.log(`\nState updated. Total synced: ${newState.total_synced_records}`);
+  console.log(`Synced ${pushResult.totalSynced} entries, ${pushResult.totalSkipped} skipped. Total: ${newState.total_synced_records}`);
 }

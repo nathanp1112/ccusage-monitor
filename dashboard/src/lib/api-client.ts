@@ -2,8 +2,14 @@
 // For local dev with Next.js server, leave empty to use rewrites
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || ''
 
+// localStorage keys for auth tokens
+const ACCESS_TOKEN_KEY = 'ccusage-access-token'
+const REFRESH_TOKEN_KEY = 'ccusage-refresh-token'
+
 interface RequestOptions extends RequestInit {
   params?: Record<string, string | number | boolean | undefined>
+  /** Skip auth header (for login/refresh endpoints) */
+  skipAuth?: boolean
 }
 
 /**
@@ -36,6 +42,78 @@ export class ApiError extends Error {
 }
 
 /**
+ * Token storage helpers
+ */
+export function getAccessToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem(ACCESS_TOKEN_KEY)
+}
+
+export function getRefreshToken(): string | null {
+  if (typeof window === 'undefined') return null
+  return localStorage.getItem(REFRESH_TOKEN_KEY)
+}
+
+export function setTokens(accessToken: string, refreshToken: string): void {
+  localStorage.setItem(ACCESS_TOKEN_KEY, accessToken)
+  localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken)
+}
+
+export function clearTokens(): void {
+  localStorage.removeItem(ACCESS_TOKEN_KEY)
+  localStorage.removeItem(REFRESH_TOKEN_KEY)
+}
+
+export function hasTokens(): boolean {
+  return !!getAccessToken()
+}
+
+/**
+ * Try to refresh the access token using the stored refresh token.
+ * Returns true if refresh succeeded, false otherwise.
+ */
+let refreshPromise: Promise<boolean> | null = null
+
+async function tryRefreshToken(): Promise<boolean> {
+  // Deduplicate concurrent refresh attempts
+  if (refreshPromise) return refreshPromise
+
+  refreshPromise = (async () => {
+    const refreshToken = getRefreshToken()
+    if (!refreshToken) return false
+
+    try {
+      const url = `${API_BASE_URL}/api/auth/refresh`
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken }),
+      })
+
+      if (!response.ok) {
+        clearTokens()
+        return false
+      }
+
+      const data = await response.json()
+      if (data.accessToken && data.refreshToken) {
+        setTokens(data.accessToken, data.refreshToken)
+        return true
+      }
+      clearTokens()
+      return false
+    } catch {
+      clearTokens()
+      return false
+    } finally {
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
+/**
  * API Client for backend communication
  */
 class ApiClient {
@@ -47,12 +125,12 @@ class ApiClient {
 
   private async request<T>(
     endpoint: string,
-    options: RequestOptions = {}
+    options: RequestOptions = {},
+    isRetry = false
   ): Promise<T> {
-    const { params, ...fetchOptions } = options
+    const { params, skipAuth, ...fetchOptions } = options
 
     // Build URL with query params
-    // Since we use Next.js rewrites, all API calls are relative
     let url = `${this.baseUrl}${endpoint}`
     if (params) {
       const searchParams = new URLSearchParams()
@@ -67,13 +145,36 @@ class ApiClient {
       }
     }
 
+    // Build headers with auth token
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(fetchOptions.headers as Record<string, string>),
+    }
+
+    if (!skipAuth) {
+      const token = getAccessToken()
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`
+      }
+    }
+
     const response = await fetch(url, {
       ...fetchOptions,
-      headers: {
-        'Content-Type': 'application/json',
-        ...fetchOptions.headers,
-      },
+      headers,
     })
+
+    // Handle 401 — try token refresh once
+    if (response.status === 401 && !skipAuth && !isRetry) {
+      const refreshed = await tryRefreshToken()
+      if (refreshed) {
+        return this.request<T>(endpoint, options, true)
+      }
+      // Refresh failed — redirect to login
+      if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login'
+      }
+      throw new ApiError(401, 'Session expired. Please log in again.')
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}))

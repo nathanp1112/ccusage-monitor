@@ -1,0 +1,197 @@
+direction: right
+
+# ──────────────────────────────────────────
+# JSONL Source Lines
+# ──────────────────────────────────────────
+Input: "JSONL Source Lines" {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#7b1fa2"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  line1: |md
+    **type: 'assistant'**
+    message.usage: {tokens}
+    model: 'claude-sonnet-4-20250514'
+    costUSD: 0.003
+  | {
+    shape: page
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+    style.font-size: 12
+  }
+
+  line2: |md
+    **type: 'user'**
+    uuid: 'abc-123'
+    message.content: 'Fix the bug'
+    cwd: '/home/dev/project'
+  | {
+    shape: page
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+    style.font-size: 12
+  }
+
+  line3: |md
+    **type: 'summary'**
+    (skipped — no usage data)
+  | {
+    shape: page
+    style.fill: "#e0e0e0"
+    style.stroke: "#9e9e9e"
+    style.font-size: 12
+  }
+}
+
+# ──────────────────────────────────────────
+# Collector Extracts
+# ──────────────────────────────────────────
+Collector: "collector.ts Extracts" {
+  style: {
+    fill: "#dcedc8"
+    stroke: "#558b2f"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  entry: |md
+    **UsageEntry**
+    ─────────────
+    request_id
+    timestamp
+    model
+    project_path
+    session_id
+    input_tokens
+    output_tokens
+    cache_tokens
+    cost_usd
+  | {
+    style.fill: "#dcedc8"
+    style.stroke: "#558b2f"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+
+  prompt: |md
+    **PromptEntry**
+    ─────────────
+    uuid
+    session_id
+    timestamp
+    project_path
+    cwd
+    content
+  | {
+    style.fill: "#dcedc8"
+    style.stroke: "#558b2f"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+
+  project: |md
+    **ProjectInfo**
+    ─────────────
+    path (cwd)
+    gitRepo (origin URL)
+  | {
+    style.fill: "#dcedc8"
+    style.stroke: "#558b2f"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+}
+
+# ──────────────────────────────────────────
+# POST Payload
+# ──────────────────────────────────────────
+Payload: "POST /api/sync Payload" {
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#1565c0"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  body: |md
+    **JSON Body**
+    ──────────────────
+    email: 'user@example.com'
+    entries: [...] @1000/batch
+    projects: [...] (1st batch only)
+    prompts: [...] @500/batch
+    agent_version: '0.5.0'
+    hostname: 'MacBook-Pro'
+    local_ip: '192.168.1.10'
+    public_ip: '203.0.113.5'
+  | {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+}
+
+# ──────────────────────────────────────────
+# Server Response
+# ──────────────────────────────────────────
+Response: "Server Response" {
+  style: {
+    fill: "#ffebee"
+    stroke: "#c62828"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  resp: |md
+    **Response**
+    ────────────
+    success: true
+    inserted: 47
+    skipped: 3
+    memberId: 'abc123'
+  | {
+    style.fill: "#ffebee"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+}
+
+# ──────────────────────────────────────────
+# Connections
+# ──────────────────────────────────────────
+Input.line1 -> Collector.entry: "parseJSONLLine()" {
+  style.stroke: "#558b2f"
+}
+Input.line2 -> Collector.prompt: "extractPrompt()" {
+  style.stroke: "#558b2f"
+}
+Input.line2 -> Collector.project: "cwd → git remote" {
+  style.stroke: "#558b2f"
+}
+Input.line3 -> Collector: "skipped" {
+  style.stroke: "#9e9e9e"
+  style.stroke-dash: 5
+}
+
+Collector.entry -> Payload.body: "batched @1000" {
+  style.stroke: "#1565c0"
+}
+Collector.prompt -> Payload.body: "batched @500" {
+  style.stroke: "#1565c0"
+}
+Collector.project -> Payload.body: "1st batch only" {
+  style.stroke: "#1565c0"
+}
+
+Payload.body -> Response.resp: "HTTP POST" {
+  style.stroke: "#c62828"
+}

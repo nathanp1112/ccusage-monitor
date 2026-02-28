@@ -1,7 +1,44 @@
 import { request } from 'undici';
-import { hostname } from 'node:os';
+import { hostname, networkInterfaces } from 'node:os';
 import type { AgentConfig } from './config.js';
 import type { UsageEntry, ProjectInfo, PromptEntry } from './collector.js';
+
+/**
+ * Get the first non-internal IPv4 address (LAN IP).
+ * Returns null on any error — IP fields are best-effort, never block sync.
+ */
+function getLocalIp(): string | null {
+  try {
+    const nets = networkInterfaces();
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] ?? []) {
+        if (net.family === 'IPv4' && !net.internal) {
+          return net.address;
+        }
+      }
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Fetch public IP from external API (3s timeout, returns null on failure)
+ */
+async function getPublicIp(): Promise<string | null> {
+  try {
+    const res = await request('https://checkip.amazonaws.com', {
+      method: 'GET',
+      headersTimeout: 3000,
+      bodyTimeout: 3000,
+    });
+    const text = await res.body.text();
+    return text.trim() || null;
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Server response for usage ingestion (Lambda API format)
@@ -40,6 +77,8 @@ async function pushBatch(
   config: AgentConfig,
   projects: ProjectInfo[],
   prompts: PromptEntry[],
+  publicIp: string | null,
+  accessToken: string | null,
   attempt: number = 1
 ): Promise<PushResult> {
   const url = `${config.server_url}/api/sync`;
@@ -71,17 +110,24 @@ async function pushBatch(
       cwd: p.cwd,
       content: p.content,
     })),
-    agent_version: '0.3.1',
+    agent_version: '0.5.0',
     hostname: hostname(),
+    local_ip: getLocalIp(),
+    public_ip: publicIp,
   };
+
+  const jsonBody = JSON.stringify(payload);
+
+  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (accessToken) {
+    headers['Authorization'] = `Bearer ${accessToken}`;
+  }
 
   try {
     const response = await request(url, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+      headers,
+      body: jsonBody,
     });
 
     const body = (await response.body.json()) as UsageIngestionResponse;
@@ -109,10 +155,9 @@ async function pushBatch(
 
     // Handle 5xx errors (retry with backoff)
     if (response.statusCode >= 500 && attempt < config.retry_attempts) {
-      const backoffMs = Math.pow(2, attempt) * 1000; // Exponential backoff
-      console.log(`Server error (${response.statusCode}), retrying in ${backoffMs}ms...`);
+      const backoffMs = Math.pow(2, attempt) * 1000;
       await sleep(backoffMs);
-      return pushBatch(entries, config, projects, prompts, attempt + 1);
+      return pushBatch(entries, config, projects, prompts, publicIp, accessToken, attempt + 1);
     }
 
     return {
@@ -126,9 +171,8 @@ async function pushBatch(
     // Network error - retry with backoff
     if (attempt < config.retry_attempts) {
       const backoffMs = Math.pow(2, attempt) * 1000;
-      console.log(`Network error, retrying in ${backoffMs}ms...`);
       await sleep(backoffMs);
-      return pushBatch(entries, config, projects, prompts, attempt + 1);
+      return pushBatch(entries, config, projects, prompts, publicIp, accessToken, attempt + 1);
     }
 
     return {
@@ -150,6 +194,7 @@ export async function pushToServer(
   options?: {
     projects?: ProjectInfo[];
     prompts?: PromptEntry[];
+    accessToken?: string | null;
     onProgress?: (batch: number, total: number) => void;
   }
 ): Promise<{
@@ -159,10 +204,19 @@ export async function pushToServer(
 }> {
   const projects = options?.projects || [];
   const prompts = options?.prompts || [];
+  const accessToken = options?.accessToken ?? null;
   const onProgress = options?.onProgress;
 
   if (entries.length === 0 && prompts.length === 0 && projects.length === 0) {
     return { totalSynced: 0, totalSkipped: 0, errors: [] };
+  }
+
+  // Fetch public IP once for all batches (best-effort, never block sync)
+  let publicIp: string | null = null;
+  try {
+    publicIp = await getPublicIp();
+  } catch {
+    // Ignore — IP is optional metadata
   }
 
   const batchSize = config.max_batch_size;
@@ -193,7 +247,7 @@ export async function pushToServer(
 
     onProgress?.(i + 1, totalBatches);
 
-    const result = await pushBatch(batch, config, batchProjects, batchPrompts);
+    const result = await pushBatch(batch, config, batchProjects, batchPrompts, publicIp, accessToken);
 
     if (result.success) {
       totalSynced += result.synced;

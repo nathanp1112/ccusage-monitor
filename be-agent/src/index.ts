@@ -5,24 +5,30 @@ import { uninstallCommand } from './commands/uninstall.js';
 import { pushCommand } from './commands/push.js';
 import { statusCommand } from './commands/status.js';
 import { updateCommand } from './commands/update.js';
+import { BUILT_IN_SERVER_URL } from './lib/config.js';
 
 const program = new Command();
 
 program
   .name('ccusage-agent')
   .description('CCUsage Agent - Sync Claude Code usage data to team server')
-  .version('0.1.0');
+  .version('0.5.0');
 
 // Setup - full installation with auto-start
 program
   .command('setup')
   .description('Full setup: configure agent and install auto-start service')
-  .requiredOption('-s, --server <url>', 'Server URL (e.g., http://192.168.0.193:3003)')
+  .option('-s, --server <url>', 'Server URL (overrides built-in default)')
   .requiredOption('-e, --email <email>', 'Your email address')
   .option('-i, --interval <minutes>', 'Sync interval in minutes', '60')
   .action(async (options) => {
+    const serverUrl = options.server || BUILT_IN_SERVER_URL;
+    if (!serverUrl) {
+      console.error('Error: --server is required (no built-in server URL in this build)');
+      process.exit(1);
+    }
     await setupCommand({
-      serverUrl: options.server,
+      serverUrl,
       email: options.email,
       interval: parseInt(options.interval, 10),
     });
@@ -32,12 +38,16 @@ program
 program
   .command('sync')
   .description('Sync usage data to server now (manual trigger)')
-  .option('-f, --force', 'Force full sync (ignore last sync timestamp)')
+  .option('-f, --force', 'Force full sync (re-read all files from scratch)')
   .option('-d, --dry-run', 'Show what would be synced without pushing')
+  .option('-v, --verbose', 'Show detailed progress output')
+  .option('--no-prompts', 'Skip syncing prompt text (entries only)')
   .action(async (options) => {
     await pushCommand({
       force: options.force,
       dryRun: options.dryRun,
+      noPrompts: options.prompts === false,
+      verbose: options.verbose,
     });
   });
 

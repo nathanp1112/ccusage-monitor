@@ -114,10 +114,9 @@ export interface MonthlyReport {
 
 // Auth types
 export interface User {
-  id: string
   name: string
   email: string
-  role: 'admin' | 'member'
+  role: 'admin' | 'agent' | 'member'
 }
 
 export interface LoginRequest {
@@ -126,6 +125,9 @@ export interface LoginRequest {
 }
 
 export interface LoginResponse {
+  success: true
+  accessToken: string
+  refreshToken: string
   user: User
 }
 

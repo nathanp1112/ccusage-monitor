@@ -1,0 +1,117 @@
+shape: sequence_diagram
+
+OS: "launchd / systemd" {
+  style: {
+    fill: "#e0f2f1"
+    stroke: "#00695c"
+    font-size: 13
+  }
+}
+D: "daemon.ts" {
+  style: {
+    fill: "#fff8e1"
+    stroke: "#f57f17"
+    font-size: 13
+  }
+}
+Cfg: "config.ts" {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#e65100"
+    font-size: 13
+  }
+}
+Col: "collector.ts" {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#e65100"
+    font-size: 13
+  }
+}
+P: "pricing.ts" {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#e65100"
+    font-size: 13
+  }
+}
+Push: "pusher.ts" {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#e65100"
+    font-size: 13
+  }
+}
+Cmd: "commander.ts" {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#e65100"
+    font-size: 13
+  }
+}
+FS: "~/.claude/**/*.jsonl" {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#7b1fa2"
+    font-size: 13
+  }
+}
+API: "Lambda /api/sync" {
+  style: {
+    fill: "#ffebee"
+    stroke: "#c62828"
+    font-size: 13
+  }
+}
+Git: "git remote" {
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#1565c0"
+    font-size: 13
+  }
+}
+
+# ── Phase 1: Trigger ──
+OS -> D: "trigger sync (every N min)"
+
+# ── Phase 2: Load config + state ──
+D -> Cfg: "loadConfig()"
+Cfg -> D: "RuntimeConfig {server_url, email, claude_paths[]}"
+D -> Cfg: "loadState()"
+Cfg -> D: "AgentState {file_offsets, last_sync_timestamp}"
+D."Determine if prompts should sync (every 24h by default)"
+
+# ── Phase 3: Collect ──
+D -> Col: "collectUsageData(config, state)"
+Col."pruneStaleOffsets() — remove deleted files"
+Col -> FS: "glob('**/*.jsonl') per claude_path"
+FS -> Col: "file list"
+Col."For each file: check offset vs size\n• New → read all (offset=0)\n• Unchanged (size==offset) → SKIP\n• Appended (size>offset) → read from offset\n• Truncated (size<offset) → reset, re-read"
+Col -> FS: "createReadStream(file, {start: byteOffset})"
+FS -> Col: "JSONL lines"
+Col."parseJSONLLine() → UsageEntry {request_id, model, tokens}\nextractPrompt() → PromptEntry {uuid, content}\nCollect cwd paths for project discovery"
+Col -> Git: "git remote get-url origin (per cwd)"
+Git -> Col: "repo URLs → ProjectInfo[]"
+Col -> P: "calculateEntryCosts(entries)"
+P."Fetch LiteLLM pricing (cached 24h)\nTiered cost per model"
+P -> Col: "cost_usd per entry"
+Col -> D: "CollectionResult {entries, prompts, projects, updatedFileOffsets}"
+
+# ── Phase 4: Push ──
+D."If no new data → saveState(offsets) → exit early"
+D -> Push: "pushToServer(entries, config, {projects, prompts})"
+Push."getPublicIp() — best-effort, 3s timeout"
+Push -> API: "POST /api/sync {email, entries, projects, prompts, hostname, IPs}\n(entries @1000/batch, prompts @500/batch)"
+API -> Push: "200 → {inserted, skipped}\n5xx → retry with backoff (2^n × 1s, max 3)\n4xx → fail, no retry"
+Push -> D: "{totalSynced, totalSkipped, errors}"
+
+# ── Phase 5: Save state ──
+D -> Cfg: "saveState({file_offsets, last_sync_timestamp, total_synced_records})"
+
+# ── Phase 6: Poll commands ──
+D."Poll for admin commands"
+D -> Cmd: "pollAndExecuteCommands(config)"
+Cmd -> API: "GET /api/agent/commands?email=..."
+API -> Cmd: "{commands: [{id, type, payload}]}"
+Cmd."Execute: revoke-token → delete credentials\nupdate-config → merge into config.json\nforce-sync → ack (next cycle runs full)"
+Cmd -> API: "POST /api/agent/commands/:id/ack"

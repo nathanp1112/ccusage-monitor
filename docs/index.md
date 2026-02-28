@@ -1,155 +1,115 @@
-# ccusage-monitor Project Documentation
+# CCUsage Monitor — Project Documentation
 
-> **Generated:** 2026-01-26 | **Scan Level:** Exhaustive | **Project Type:** CLI Monorepo
+> **Generated:** 2026-02-25 | **Scan Level:** Exhaustive | **Project Type:** Serverless Monitoring System
 
 ## Quick Reference
 
 | Attribute | Value |
 |-----------|-------|
-| **Repository Type** | Monorepo (pnpm workspaces) |
-| **Primary Language** | TypeScript |
-| **Project Type** | CLI Tool Suite |
-| **Version** | 18.0.5 |
-| **Package Manager** | pnpm 10.24.0 |
-| **Runtime** | Node.js ≥20.19.4, Bun ≥1.3.2 |
-
-## Project Purpose
-
-**ccusage** is a comprehensive usage analysis tool for AI coding assistants. It monitors and tracks token usage and costs across multiple platforms:
-
-- **Claude Code** (primary) - Anthropic's AI coding assistant
-- **Codex** - OpenAI's coding assistant
-- **OpenCode** - Alternative AI coding platform
-- **Amp** - CLI usage tracking
-- **Pi-agent** - Pi platform usage
+| **Project** | CCUsage Monitor |
+| **Purpose** | Team monitoring for Claude Code usage tracking |
+| **Primary Language** | TypeScript (all components) |
+| **Infrastructure** | AWS Lambda, S3, API Gateway, CloudFront |
+| **Region** | ap-southeast-1 (Singapore) |
+| **Components** | be-agent (CLI), lambda-server (Backend), dashboard (Frontend) |
 
 ## Architecture Overview
 
-![Architecture Overview](./diagrams/index-1.svg)
-
-<details>
-<summary>View Mermaid Source</summary>
-
-```mermaid
-graph TB
-    subgraph "User Layer"
-        CLI[CLI Interface]
-        MCP[MCP Server]
-        LIB[Library API]
-    end
-
-    subgraph "Application Layer"
-        CCUSAGE[ccusage App]
-        CODEX[codex App]
-        OPENCODE[opencode App]
-        AMP[amp App]
-        PI[pi App]
-        MCPAPP[mcp App]
-    end
-
-    subgraph "Shared Packages"
-        INTERNAL[@ccusage/internal]
-        TERMINAL[@ccusage/terminal]
-    end
-
-    subgraph "Data Sources"
-        CLAUDE_DATA[~/.claude/projects/]
-        CONFIG_DATA[~/.config/claude/projects/]
-        CODEX_DATA[~/.codex/sessions/]
-        OPENCODE_DATA[~/.local/share/opencode/]
-    end
-
-    subgraph "External Services"
-        LITELLM[LiteLLM Pricing API]
-    end
-
-    CLI --> CCUSAGE
-    CLI --> CODEX
-    CLI --> OPENCODE
-    CLI --> AMP
-    CLI --> PI
-    MCP --> MCPAPP
-    LIB --> CCUSAGE
-
-    CCUSAGE --> INTERNAL
-    CCUSAGE --> TERMINAL
-    CODEX --> INTERNAL
-    CODEX --> TERMINAL
-    OPENCODE --> INTERNAL
-    MCPAPP --> CCUSAGE
-    MCPAPP --> CODEX
-
-    CCUSAGE --> CLAUDE_DATA
-    CCUSAGE --> CONFIG_DATA
-    CODEX --> CODEX_DATA
-    OPENCODE --> OPENCODE_DATA
-
-    INTERNAL --> LITELLM
 ```
-
-</details>
+Developer Machine                    AWS Cloud
+┌───────────────────┐               ┌──────────────────────────────────────────┐
+│   be-agent        │  POST         │           API Gateway (HTTP API)         │
+│   (ccusage-agent) │  /api/sync    │  ┌────────────────────────────────────┐  │
+│                   │──────────────▶│  │  Lambda: API Handler (Hono)       │  │
+│ Parse ~/.claude/  │               │  └───────────────┬──────────────────┘  │
+│ projects/*.jsonl  │  GET          │                  │                      │
+│                   │  /api/agent/* │  ┌───────────────┴──────────────────┐  │
+│                   │◀──────────────│  │  S3 Bucket (ccusage-data-dev)   │  │
+└───────────────────┘               │  │  raw/ → aggregated/ → views/    │  │
+                                    │  └───────────────┬──────────────────┘  │
+                                    │                  │                      │
+Browser (SPA)                       │  ┌───────────────┴──────────────────┐  │
+┌───────────────────┐  CloudFront   │  │  Lambda: Aggregator (hourly)    │  │
+│   dashboard       │◀──────────── │  └──────────────────────────────────┘  │
+│   (Next.js 15)    │  GET /api/*   │                                        │
+│                   │──────────────▶│                                        │
+└───────────────────┘               └──────────────────────────────────────────┘
+```
 
 ## Generated Documentation
 
 ### Core Documentation
 
-- [Project Overview](./project-overview.md) - Executive summary and project purpose
-- [Architecture](./architecture.md) - Detailed system architecture and patterns
-- [Source Tree Analysis](./source-tree-analysis.md) - Directory structure with annotations
-- [Data Flow](./data-flow.md) - How data moves through the system
+| Document | Description |
+|----------|-------------|
+| [Project Overview](./project-overview.md) | Executive summary, architecture overview, component details, AWS infrastructure, key design decisions |
+| [Architecture](./architecture.md) | Detailed system architecture with mermaid diagrams: component internals, data architecture, communication patterns, security, infrastructure |
+| [Source Tree Analysis](./source-tree-analysis.md) | Complete annotated directory structure for all 3 components with file-by-file descriptions |
 
 ### Technical Guides
 
-- [Development Guide](./development-guide.md) - Setup and development workflow
-- [API Contracts](./api-contracts.md) - CLI commands and MCP tools
-- [Data Models](./data-models.md) - Schema definitions and data structures
+| Document | Description |
+|----------|-------------|
+| [Development Guide](./development-guide.md) | Local setup, environment variables, build commands, testing, deployment, common tasks, debugging |
+| [API Contracts](./api-contracts.md) | Complete API documentation: all endpoints, request/response types, auth, error codes, batching, CORS |
+| [Data Models](./data-models.md) | S3 key patterns, TypeScript interfaces, JSONL format, sync payloads, view types, agent config |
+| [Integration Architecture](./integration-architecture.md) | All integration points: sync protocol, command polling, S3 storage, dashboard API, admin commands |
 
-### Diagrams
+### Pre-Existing Design Documents
 
-- [Sequence Diagrams](./sequence-diagrams.md) - Interaction flows
-- [Activity Diagrams](./activity-diagrams.md) - Process workflows
+| Document | Description |
+|----------|-------------|
+| [S3 Serverless Architecture Spec](./architecture-s3-serverless.md) | Original design spec for migrating from PostgreSQL to S3 serverless |
+| [Technical Design](./team-monitor-technical-design.md) | Initial technical design document (v1.0.0, 2026-01-26) |
+| [Frontend Spec](./frontend-spec.md) | Dashboard frontend specification |
+| [RFC: Incremental Aggregation](./rfc-incremental-aggregation.md) | RFC for aggregate-at-source pattern (2026-02-06) |
 
-## Monorepo Structure
+## Component Summary
+
+| Component | Tech | Version | Responsibility |
+|-----------|------|---------|----------------|
+| **be-agent** | Node.js CLI (Commander.js) | 0.5.0 | Parse local JSONL logs, push to server, auto-update, execute admin commands |
+| **lambda-server** | Hono on AWS Lambda | 0.1.0 | Store raw data in S3, compute aggregations, serve views, auth, admin |
+| **dashboard** | Next.js 15 (static export) | 0.1.0 | Fetch views, render charts (Recharts), hosted on CloudFront |
+
+## Three-Layer S3 Architecture
 
 ```
-ccusage/
-├── apps/                    # 6 application packages
-│   ├── ccusage/            # Main Claude Code analyzer
-│   ├── codex/              # OpenAI Codex analyzer
-│   ├── opencode/           # OpenCode analyzer
-│   ├── amp/                # Amp CLI analyzer
-│   ├── pi/                 # Pi-agent analyzer
-│   └── mcp/                # MCP server
-├── packages/               # 2 shared packages
-│   ├── internal/           # Pricing, logging, formatting
-│   └── terminal/           # Table and UI utilities
-└── docs/                   # VitePress documentation
+raw/           = "What happened"    (source of truth, individual entries)
+aggregated/    = "What it means"    (pre-computed per-month summaries)
+views/         = "What to show"     (dashboard-ready JSON)
+
+Each layer can be rebuilt from the one above: raw/ → aggregated/ → views/
 ```
+
+## Technology Stack
+
+| Category | Technology |
+|----------|------------|
+| **CLI Framework** | Commander.js |
+| **Backend Framework** | Hono |
+| **Frontend Framework** | Next.js 15 (React 19) |
+| **Server State** | TanStack Query 5 |
+| **UI State** | Zustand 5 |
+| **Charts** | Recharts 2.15 |
+| **Styling** | Tailwind CSS 4 + Radix UI |
+| **Validation** | Zod |
+| **Auth** | JWT (HS256) |
+| **Testing** | Vitest |
+| **Infrastructure** | AWS Lambda, S3, API Gateway, CloudFront, EventBridge |
+| **Deployment** | Serverless Framework v4 |
 
 ## Getting Started
 
 ```bash
-# Install dependencies
-pnpm install
+# Lambda server (local dev)
+cd lambda-server && pnpm dev
 
-# Run daily usage report
-pnpm run start daily
+# Dashboard (local dev)
+cd dashboard && pnpm dev
 
-# Run with JSON output
-pnpm run start daily --json
-
-# Show 5-hour billing blocks
-pnpm run start blocks --active
+# Agent (build + test)
+cd be-agent && pnpm build && pnpm start sync --dry-run
 ```
 
-## Technology Stack Summary
-
-| Category | Technology |
-|----------|------------|
-| **CLI Framework** | Gunshi |
-| **Validation** | Valibot, Zod |
-| **Error Handling** | @praha/byethrow |
-| **Testing** | Vitest |
-| **Build** | tsdown |
-| **MCP** | @modelcontextprotocol/sdk |
-| **HTTP** | Hono |
+See [Development Guide](./development-guide.md) for detailed setup instructions.

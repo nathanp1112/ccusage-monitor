@@ -1,0 +1,212 @@
+direction: right
+
+# ──────────────────────────────────────────
+# Force Mode (top-level note)
+# ──────────────────────────────────────────
+ForceMode: "Force Mode\n(ccusage-agent sync --force)" {
+  style: {
+    fill: "#ffebee"
+    stroke: "#c62828"
+    stroke-width: 2
+    stroke-dash: 5
+    font-size: 13
+    bold: true
+    border-radius: 10
+  }
+  reset: "Reset ALL file_offsets = {}\nEvery file treated as NEW" {
+    style.fill: "#ffcdd2"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+}
+
+# ──────────────────────────────────────────
+# Main State Machine
+# ──────────────────────────────────────────
+start: "For each\n.jsonl file" {
+  shape: oval
+  style.fill: "#e8f4fd"
+  style.stroke: "#1565c0"
+  style.font-size: 13
+}
+
+CheckFile: "Check\nfile_offsets[file]" {
+  shape: diamond
+  style.fill: "#fff3e0"
+  style.stroke: "#e65100"
+  style.font-size: 12
+}
+
+# ── Branch: New File ──
+NewFile: "NEW FILE\nbyteOffset = 0" {
+  style.fill: "#c8e6c9"
+  style.stroke: "#2e7d32"
+  style.border-radius: 8
+  style.font-size: 12
+}
+ReadAll: "Read entire file\ncreateReadStream(start: 0)" {
+  style.fill: "#dcedc8"
+  style.stroke: "#558b2f"
+  style.border-radius: 8
+  style.font-size: 12
+}
+
+# ── Branch: Existing File ──
+ExistingFile: "EXISTING FILE\nCompare sizes" {
+  style: {
+    fill: "#fff8e1"
+    stroke: "#f57f17"
+    stroke-width: 2
+    font-size: 13
+    bold: true
+    border-radius: 10
+  }
+
+  CompareSize: "stat(file).size\nvs offset" {
+    shape: diamond
+    style.fill: "#fff8e1"
+    style.stroke: "#f57f17"
+    style.font-size: 12
+  }
+
+  Unchanged: "UNCHANGED\nsize == offset" {
+    style.fill: "#e0e0e0"
+    style.stroke: "#616161"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+  SkipFile: "SKIP\nZero I/O\n(most common path)" {
+    style.fill: "#e0e0e0"
+    style.stroke: "#616161"
+    style.border-radius: 8
+    style.font-size: 11
+    style.italic: true
+  }
+
+  Appended: "APPENDED\nsize > offset" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+  ReadIncremental: "Read from offset\ncreateReadStream(start: offset)\nJSONL is append-only" {
+    style.fill: "#dcedc8"
+    style.stroke: "#558b2f"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+
+  Truncated: "TRUNCATED\nsize < offset" {
+    style.fill: "#ffcdd2"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+  ResetAndRead: "Reset offset = 0\nRe-read entire file" {
+    style.fill: "#ffcdd2"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+
+  CompareSize -> Unchanged: "=="
+  CompareSize -> Appended: ">"
+  CompareSize -> Truncated: "<"
+  Unchanged -> SkipFile
+  Appended -> ReadIncremental
+  Truncated -> ResetAndRead
+}
+
+# ── Parse Lines ──
+ParseLines: "Parse JSONL Lines" {
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#1565c0"
+    stroke-width: 2
+    font-size: 13
+    bold: true
+    border-radius: 10
+  }
+
+  ReadLine: "Read line" {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+  ParseJSON: "JSON.parse(line)" {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+    style.font-size: 12
+  }
+  ExtractUsage: "Has message.usage?\n→ UsageEntry\nPush to entries[]" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+    style.font-size: 11
+  }
+  ExtractPrompt: "type == 'user'?\n→ PromptEntry\nPush to prompts[]" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+    style.font-size: 11
+  }
+  SkipLine: "Incomplete\nNo usage data\n→ skip" {
+    style.fill: "#e0e0e0"
+    style.stroke: "#616161"
+    style.border-radius: 8
+    style.font-size: 11
+  }
+  EOF: "EOF" {
+    shape: oval
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.font-size: 12
+  }
+
+  ReadLine -> ParseJSON
+  ParseJSON -> ExtractUsage: "yes"
+  ParseJSON -> ExtractPrompt: "user msg"
+  ParseJSON -> SkipLine: "no"
+  ExtractUsage -> ReadLine
+  ExtractPrompt -> ReadLine
+  SkipLine -> ReadLine
+  ReadLine -> EOF: "no more lines"
+}
+
+# ── Save & Done ──
+SaveOffset: "Save offset\nfile_offsets[file] = fileSize" {
+  style.fill: "#c8e6c9"
+  style.stroke: "#2e7d32"
+  style.border-radius: 8
+  style.font-size: 12
+}
+Done: "Done\n→ next file" {
+  shape: oval
+  style.fill: "#c8e6c9"
+  style.stroke: "#2e7d32"
+  style.font-size: 12
+}
+
+# ──────────────────────────────────────────
+# Connections
+# ──────────────────────────────────────────
+start -> CheckFile
+CheckFile -> NewFile: "No offset\nin state"
+CheckFile -> ExistingFile.CompareSize: "Has offset\nin state"
+
+NewFile -> ReadAll
+ReadAll -> ParseLines.ReadLine
+ExistingFile.ReadIncremental -> ParseLines.ReadLine
+ExistingFile.ResetAndRead -> ParseLines.ReadLine
+
+ParseLines.EOF -> SaveOffset
+ExistingFile.SkipFile -> Done
+SaveOffset -> Done
+
+ForceMode -> start: "all files become NEW" {
+  style.stroke-dash: 5
+  style.stroke: "#c62828"
+}

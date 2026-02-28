@@ -68,7 +68,8 @@ export interface MemberInfo {
   lastSyncAt: string | null;
   lastSync?: {
     hostname: string | null;
-    clientIp: string | null;
+    localIp: string | null;
+    publicIp: string | null;
     userAgent: string | null;
     agentVersion: string | null;
   };
@@ -91,6 +92,7 @@ export interface SyncLogEntry {
   recordsSkipped: number;
   hostname: string | null;
   clientIp: string | null;
+  localIp: string | null;
   userAgent: string | null;
   agentVersion: string | null;
 }
@@ -142,6 +144,8 @@ export interface SyncRequest {
   prompts?: SyncRequestPrompt[];
   hostname?: string;
   agent_version?: string;
+  local_ip?: string | null;
+  public_ip?: string | null;
 }
 
 export interface SyncResponse {
@@ -340,6 +344,38 @@ export interface CommandQueue {
   memberId: string;
   lastUpdated: string;
   commands: AgentCommand[];
+}
+
+// ============================================
+// Auth Types
+// ============================================
+
+export interface AuthUser {
+  email: string;
+  name: string;
+  role: 'admin' | 'agent' | 'member';
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResponse {
+  success: true;
+  accessToken: string;
+  refreshToken: string;
+  user: AuthUser;
+}
+
+export interface RefreshRequest {
+  refreshToken: string;
+}
+
+export interface RefreshResponse {
+  success: true;
+  accessToken: string;
+  refreshToken: string;
 }
 
 // ============================================

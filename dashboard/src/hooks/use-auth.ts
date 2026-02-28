@@ -2,26 +2,23 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { apiClient } from '@/lib/api-client'
+import { apiClient, setTokens, clearTokens, hasTokens } from '@/lib/api-client'
 import { queryKeys } from '@/lib/query-keys'
 import type { LoginRequest, LoginResponse, User } from '@/types/api'
 
 /**
- * Hook for current user session
- * Note: Auth not implemented in Lambda API yet, returns default user
+ * Hook for current user session — calls GET /api/auth/me
  */
 export function useSession() {
   return useQuery({
     queryKey: queryKeys.auth.session,
     queryFn: async (): Promise<User> => {
-      // Auth not implemented in Lambda API - return default user
-      return {
-        id: 'default',
-        name: 'Admin',
-        email: 'admin@localhost',
-        role: 'admin',
-      }
+      const data = await apiClient.get<{ success: boolean; user: User }>(
+        '/api/auth/me'
+      )
+      return data.user
     },
+    enabled: hasTokens(),
     retry: false,
     staleTime: 1000 * 60 * 5, // 5 minutes
   })
@@ -38,11 +35,15 @@ export function useLogin() {
     mutationFn: async (credentials: LoginRequest) => {
       const response = await apiClient.post<LoginResponse>(
         '/api/auth/login',
-        credentials
+        credentials,
+        { skipAuth: true }
       )
       return response
     },
     onSuccess: (data) => {
+      // Store JWT tokens
+      setTokens(data.accessToken, data.refreshToken)
+      // Cache user in query
       queryClient.setQueryData(queryKeys.auth.session, data.user)
       router.push('/')
     },
@@ -58,9 +59,20 @@ export function useLogout() {
 
   return useMutation({
     mutationFn: async () => {
-      await apiClient.post('/api/auth/logout')
+      try {
+        await apiClient.post('/api/auth/logout')
+      } catch {
+        // Logout is best-effort — clear tokens regardless
+      }
     },
     onSuccess: () => {
+      clearTokens()
+      queryClient.clear()
+      router.push('/login')
+    },
+    onError: () => {
+      // Clear tokens even on error
+      clearTokens()
       queryClient.clear()
       router.push('/login')
     },

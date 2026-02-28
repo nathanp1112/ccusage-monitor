@@ -1,0 +1,245 @@
+direction: down
+
+# ──────────────────────────────────────────
+# Build Time
+# ──────────────────────────────────────────
+Build: "Build Time  (publish-agent.sh --stage X)" {
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#1565c0"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  stageConfig: "stage-config.sh\nloads API_URL per stage" {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+  }
+  build: "SERVER_URL=API_URL pnpm build\ntsup bakes URL into binary" {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+  }
+  pack: "npm pack\n→ ccusage-agent-X.Y.Z.tgz" {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+  }
+  upload: "Upload tgz + version.json\nto S3 releases/" {
+    style.fill: "#e8f4fd"
+    style.stroke: "#1565c0"
+    style.border-radius: 8
+  }
+
+  stageConfig -> build -> pack -> upload
+}
+
+# ──────────────────────────────────────────
+# First-Time Install
+# ──────────────────────────────────────────
+Install: "First-Time Install" {
+  style: {
+    fill: "#dcedc8"
+    stroke: "#558b2f"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  npmInstall: "npm install -g\n./ccusage-agent-X.Y.Z.tgz" {
+    style.fill: "#dcedc8"
+    style.stroke: "#558b2f"
+    style.border-radius: 8
+  }
+  setupRun: "ccusage-agent setup\n--email user@example.com" {
+    style.fill: "#dcedc8"
+    style.stroke: "#558b2f"
+    style.border-radius: 8
+  }
+
+  npmInstall -> setupRun
+}
+
+# ──────────────────────────────────────────
+# Setup Flow
+# ──────────────────────────────────────────
+SetupFlow: "setup.ts Flow" {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#7b1fa2"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  resolveUrl: "--server provided?" {
+    shape: diamond
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+  }
+  useProvided: "Use --server URL" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+  }
+  useBaked: "Use BUILT_IN_SERVER_URL\n(baked at build time)" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+  }
+  errorExit: "Error: --server required" {
+    style.fill: "#ffcdd2"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+  }
+
+  step1: "Step 1: Save config.json\n{server_url, email, interval}" {
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+    style.border-radius: 8
+  }
+  step2: "Step 2: Discover Claude paths\n~/.claude/projects\n~/.config/claude/projects\n~/.ccs/instances/*/projects" {
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+    style.border-radius: 8
+  }
+  step3: "Step 3: Detect OS" {
+    shape: diamond
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+  }
+  step3mac: "macOS: Install launchd plist\nRunAtLoad + StartInterval" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  step3linux: "Linux: Install systemd\nservice + timer unit" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  step4: "Step 4: GET /api/register/link?email=...\nPrint dashboard link" {
+    style.fill: "#f3e5f5"
+    style.stroke: "#7b1fa2"
+    style.border-radius: 8
+  }
+  step5: "Setup complete!\nAgent syncs every N min" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+    style.font-size: 14
+    style.bold: true
+  }
+
+  resolveUrl -> useProvided: "Yes"
+  resolveUrl -> useBaked: "No"
+  resolveUrl -> errorExit: "Neither"
+  useProvided -> step1
+  useBaked -> step1
+  step1 -> step2 -> step3
+  step3 -> step3mac: "darwin"
+  step3 -> step3linux: "linux"
+  step3mac -> step4
+  step3linux -> step4
+  step4 -> step5
+}
+
+# ──────────────────────────────────────────
+# Auto-Start
+# ──────────────────────────────────────────
+AutoStart: "Auto-Start (OS-Managed)" {
+  style: {
+    fill: "#fff8e1"
+    stroke: "#f57f17"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  osService: "launchd / systemd" {
+    style.fill: "#fff8e1"
+    style.stroke: "#f57f17"
+    style.border-radius: 8
+  }
+  trigger: "Triggers: node ccusage-agent sync\nevery N minutes + on login" {
+    style.fill: "#fff8e1"
+    style.stroke: "#f57f17"
+    style.border-radius: 8
+  }
+  daemonSync: "daemon.ts syncCycle()\ncollect → push → poll commands" {
+    style.fill: "#fff8e1"
+    style.stroke: "#f57f17"
+    style.border-radius: 8
+  }
+
+  osService -> trigger -> daemonSync
+}
+
+# ──────────────────────────────────────────
+# Update Flow
+# ──────────────────────────────────────────
+UpdateFlow: "update.ts Flow" {
+  style: {
+    fill: "#e0f2f1"
+    stroke: "#00695c"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  checkVer: "GET /api/agent/version\nfrom configured server_url" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  compare: "Compare semver\ncurrent vs latest" {
+    shape: diamond
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+  }
+  upToDate: "Already up to date!" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+  }
+  download: "Download tgz via\npresigned S3 URL" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  installGlobal: "npm install -g\n/tmp/ccusage-agent-X.Y.Z.tgz" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  reSetup: "Re-run: ccusage-agent setup\n(re-installs OS service)" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  reSync: "Run: ccusage-agent sync\n(incremental, offsets preserved)" {
+    style.fill: "#e0f2f1"
+    style.stroke: "#00695c"
+    style.border-radius: 8
+  }
+  done: "Update complete!" {
+    style.fill: "#c8e6c9"
+    style.stroke: "#2e7d32"
+    style.border-radius: 8
+    style.font-size: 14
+    style.bold: true
+  }
+
+  checkVer -> compare
+  compare -> upToDate: "current >= latest\n& !force"
+  compare -> download: "current < latest\nor force"
+  download -> installGlobal -> reSetup -> reSync -> done
+}
+
+# ──────────────────────────────────────────
+# Cross-section connections
+# ──────────────────────────────────────────
+Install.setupRun -> SetupFlow.resolveUrl
+SetupFlow.step5 -> AutoStart.osService

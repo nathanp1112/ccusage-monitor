@@ -69,6 +69,7 @@ export async function statusCommand(): Promise<void> {
   const config = loadConfig();
   console.log(`  Server URL: ${config.server_url}`);
   console.log(`  Email: ${config.email}`);
+  console.log(`  Password: ${config.password ? 'configured' : 'not set'}`);
   console.log(`  Sync interval: ${config.sync_interval_minutes} minutes`);
 
   // Daemon status
@@ -97,7 +98,8 @@ export async function statusCommand(): Promise<void> {
   }
 
   console.log(`  Total synced records: ${state.total_synced_records}`);
-  console.log(`  Tracked request IDs: ${state.seen_request_ids.length}`);
+  console.log(`  Tracked file offsets: ${Object.keys(state.file_offsets).length}`);
+  console.log(`  Auth token: ${state.access_token ? 'stored' : 'none'}`);
 
   // Claude paths
   console.log('\nClaude Data Paths:');

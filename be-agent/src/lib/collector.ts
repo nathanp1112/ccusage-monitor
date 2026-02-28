@@ -1,10 +1,44 @@
-import { createReadStream, statSync, existsSync } from 'node:fs';
+import { createReadStream, readSync, openSync, closeSync, statSync, existsSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
+import { createHash } from 'node:crypto';
 import { basename, sep } from 'node:path';
 import { glob } from 'tinyglobby';
-import type { RuntimeConfig, AgentState } from './config.js';
+import type { RuntimeConfig, AgentState, FileOffset } from './config.js';
+import { pruneStaleOffsets } from './config.js';
 import { calculateCost } from './pricing.js';
+
+/**
+ * Size of the head chunk used for fingerprinting.
+ * 512 bytes captures the first few JSONL lines — enough to detect file replacement.
+ */
+const FINGERPRINT_BYTES = 512;
+
+/**
+ * Compute a SHA-256 hash of the first N bytes of a file.
+ * If the file is shorter than N bytes, hash whatever is available.
+ */
+function computeFingerprint(filePath: string): string {
+  const fd = openSync(filePath, 'r');
+  try {
+    const buf = Buffer.alloc(FINGERPRINT_BYTES);
+    const bytesRead = readSync(fd, buf, 0, FINGERPRINT_BYTES, 0);
+    return createHash('sha256').update(buf.subarray(0, bytesRead)).digest('hex');
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Verify that a file's head bytes still match a previously stored fingerprint.
+ */
+function verifyFingerprint(filePath: string, expected: string): boolean {
+  try {
+    return computeFingerprint(filePath) === expected;
+  } catch {
+    return false; // Can't read → treat as changed
+  }
+}
 
 /**
  * Usage entry to be sent to server
@@ -80,6 +114,14 @@ export interface CollectionResult {
   filesScanned: number;
   linesProcessed: number;
   errors: string[];
+  updatedFileOffsets: Record<string, FileOffset>;
+}
+
+/**
+ * Collection options
+ */
+export interface CollectOptions {
+  skipPrompts?: boolean;
 }
 
 /**
@@ -176,29 +218,52 @@ function extractPrompt(
 }
 
 /**
- * Process a single JSONL file
+ * Process a single JSONL file, reading only new bytes from byteOffset.
+ * JSONL files are append-only, so bytes after the offset are guaranteed new.
  */
 async function processJSONLFile(
   filePath: string,
-  lastSyncTimestamp: string | null,
-  seenRequestIds: Set<string>,
-  seenPromptUuids: Set<string>,
+  byteOffset: number,
+  skipPrompts: boolean,
   cwdPaths: Set<string>
-): Promise<{ entries: UsageEntry[]; prompts: PromptEntry[]; linesProcessed: number; errors: string[] }> {
+): Promise<{
+  entries: UsageEntry[];
+  prompts: PromptEntry[];
+  linesProcessed: number;
+  errors: string[];
+  finalByteOffset: number;
+}> {
   const entries: UsageEntry[] = [];
   const prompts: PromptEntry[] = [];
   const errors: string[] = [];
   let linesProcessed = 0;
 
+  const fileSize = statSync(filePath).size;
+
+  // Nothing new to read
+  if (byteOffset >= fileSize) {
+    return { entries, prompts, linesProcessed: 0, errors, finalByteOffset: byteOffset };
+  }
+
   const projectPath = extractProjectFromPath(filePath);
   const sessionId = extractSessionFromPath(filePath);
 
   return new Promise((resolve) => {
-    const stream = createReadStream(filePath, { encoding: 'utf-8' });
+    const stream = createReadStream(filePath, {
+      encoding: 'utf-8',
+      start: byteOffset,
+    });
     const rl = createInterface({ input: stream, crlfDelay: Infinity });
+    let isFirstLine = byteOffset > 0;
 
     rl.on('line', (line) => {
       if (!line.trim()) return;
+
+      // If starting mid-file, the first chunk may be a partial line.
+      // Try parsing it; if it fails, skip silently (caught by catch below).
+      if (isFirstLine) {
+        isFirstLine = false;
+      }
 
       linesProcessed++;
 
@@ -211,33 +276,20 @@ async function processJSONLFile(
         }
 
         // Extract prompt from user messages
-        if (data.type === 'user' && data.uuid && !seenPromptUuids.has(data.uuid)) {
+        if (!skipPrompts && data.type === 'user' && data.uuid) {
           const prompt = extractPrompt(data, projectPath, sessionId);
           if (prompt) {
-            // Skip if before last sync timestamp
-            if (!lastSyncTimestamp || prompt.timestamp > lastSyncTimestamp) {
-              prompts.push(prompt);
-              seenPromptUuids.add(data.uuid);
-            }
+            prompts.push(prompt);
           }
         }
 
-        // Extract usage entry (existing logic)
+        // Extract usage entry
         const entry = parseJSONLLine(line, projectPath, sessionId);
         if (!entry) return;
 
-        if (lastSyncTimestamp && entry.timestamp <= lastSyncTimestamp) {
-          return;
-        }
-
-        if (seenRequestIds.has(entry.request_id)) {
-          return;
-        }
-
         entries.push(entry);
-        seenRequestIds.add(entry.request_id);
       } catch {
-        // Skip unparseable lines
+        // Skip unparseable lines (includes partial first line if mid-file start)
       }
     });
 
@@ -246,7 +298,7 @@ async function processJSONLFile(
     });
 
     rl.on('close', () => {
-      resolve({ entries, prompts, linesProcessed, errors });
+      resolve({ entries, prompts, linesProcessed, errors, finalByteOffset: fileSize });
     });
   });
 }
@@ -294,21 +346,25 @@ function discoverProjects(cwdPaths: Set<string>): ProjectInfo[] {
 }
 
 /**
- * Collect usage data from Claude Code directories
+ * Collect usage data from Claude Code directories.
+ * Uses per-file byte offsets to read only new data appended since last sync.
  */
 export async function collectUsageData(
   config: RuntimeConfig,
-  state: AgentState
+  state: AgentState,
+  options?: CollectOptions
 ): Promise<CollectionResult> {
   const allEntries: UsageEntry[] = [];
   const allPrompts: PromptEntry[] = [];
   const allErrors: string[] = [];
   let totalFilesScanned = 0;
   let totalLinesProcessed = 0;
+  const skipPrompts = options?.skipPrompts ?? false;
 
-  // Track seen IDs (start with existing from state)
-  const seenRequestIds = new Set(state.seen_request_ids);
-  const seenPromptUuids = new Set(state.seen_prompt_uuids || []);
+  // Prune offsets for deleted files
+  pruneStaleOffsets(state);
+
+  const updatedFileOffsets: Record<string, FileOffset> = { ...state.file_offsets };
   const cwdPaths = new Set<string>();
 
   // Find all JSONL files in configured paths
@@ -324,38 +380,58 @@ export async function collectUsageData(
         cwd: claudePath,
         absolute: true,
       });
-
-      // Filter by modification time if we have a last sync timestamp
-      for (const file of files) {
-        if (state.last_sync_timestamp) {
-          try {
-            const stats = statSync(file);
-            const lastSyncDate = new Date(state.last_sync_timestamp);
-            if (stats.mtime <= lastSyncDate) {
-              continue; // Skip files not modified since last sync
-            }
-          } catch {
-            // If we can't stat, include the file anyway
-          }
-        }
-        jsonlFiles.push(file);
-      }
+      jsonlFiles.push(...files);
     } catch (err) {
       allErrors.push(`Error scanning ${claudePath}: ${(err as Error).message}`);
     }
   }
 
-  // Process each file
+  // Process each file using byte offsets
   for (const file of jsonlFiles) {
+    const knownOffset = state.file_offsets[file];
+    let byteOffset = 0;
+
+    if (knownOffset) {
+      try {
+        const stats = statSync(file);
+
+        if (stats.size < knownOffset.byteOffset) {
+          // File was truncated/rewritten — re-read from beginning
+          byteOffset = 0;
+        } else if (stats.size === knownOffset.byteOffset) {
+          // Same size — check if file was replaced (different inode/birthtime)
+          if (knownOffset.fingerprint && !verifyFingerprint(file, knownOffset.fingerprint)) {
+            byteOffset = 0; // File replaced at same path — re-read
+          } else {
+            continue; // Truly unchanged — skip
+          }
+        } else {
+          // File grew — verify it's the same file, not a replacement
+          if (knownOffset.fingerprint && !verifyFingerprint(file, knownOffset.fingerprint)) {
+            byteOffset = 0; // Different file at same path — re-read from beginning
+          } else {
+            byteOffset = knownOffset.byteOffset; // Same file, appended — read from offset
+          }
+        }
+      } catch {
+        byteOffset = 0;
+      }
+    }
+
     totalFilesScanned++;
 
-    const result = await processJSONLFile(
-      file,
-      state.last_sync_timestamp,
-      seenRequestIds,
-      seenPromptUuids,
-      cwdPaths
-    );
+    const result = await processJSONLFile(file, byteOffset, skipPrompts, cwdPaths);
+
+    // Record updated offset + fingerprint
+    try {
+      updatedFileOffsets[file] = {
+        byteOffset: result.finalByteOffset,
+        lastModified: statSync(file).mtime.toISOString(),
+        fingerprint: computeFingerprint(file),
+      };
+    } catch {
+      // If stat fails after processing, still keep old offset
+    }
 
     allEntries.push(...result.entries);
     allPrompts.push(...result.prompts);
@@ -380,6 +456,7 @@ export async function collectUsageData(
     filesScanned: totalFilesScanned,
     linesProcessed: totalLinesProcessed,
     errors: allErrors,
+    updatedFileOffsets,
   };
 }
 

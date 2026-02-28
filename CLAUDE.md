@@ -107,6 +107,16 @@ RELEASES:
 | `GET` | `/api/admin/commands/:memberId` | View command history |
 | `GET` | `/api/admin/status` | System status |
 
+### Register (Temporary In-Memory Store)
+| Method | Path | Purpose |
+|--------|------|---------|
+| `GET` | `/api/register` | List all registration items |
+| `PUT` | `/api/register` | Replace entire registration list |
+| `GET` | `/api/register/link?email=...` | Get dashboard link for email |
+| `POST` | `/api/register/update` | Update link by data field match |
+
+Data persists across Lambda warm invocations, resets on cold start. No auth required.
+
 ## Key Files
 
 ### be-agent (Local CLI)
@@ -131,6 +141,7 @@ RELEASES:
 - `src/routes/members.ts` — GET /api/members, /api/members/:id
 - `src/routes/agent.ts` — Agent-facing endpoints (version, commands)
 - `src/routes/admin.ts` — Admin endpoints (aggregate trigger, command management)
+- `src/routes/register.ts` — In-memory temporary registration store
 - `src/lib/s3.ts` — S3 helpers, key patterns, ETag support, retry logic, cost math
 - `src/lib/types.ts` — All TypeScript type definitions
 - `src/lib/aggregation.ts` — Shared aggregation logic (used by sync + aggregator)
@@ -145,8 +156,11 @@ RELEASES:
 - `src/components/shared/` — Reusable: PageHeader, StatsBar, DataSheet, etc.
 
 ### scripts/
+- `deploy.sh` — Orchestrator: deploy one or more modules with `--stage`
+- `deploy-lambda.sh` — Deploy lambda-server via Serverless Framework
+- `deploy-dashboard.sh` — Build + upload dashboard to S3 + invalidate CloudFront
 - `publish-agent.sh` — Build + pack + upload agent to S3 releases
-- `deploy-dashboard-s3.sh` — Build + upload dashboard to S3 + invalidate CloudFront
+- `stage-config.sh` — Shared stage → AWS resource mapping (sourced by all deploy scripts)
 - `test-api.sh` — Test backend endpoints
 - `upload-usage.mjs` — Manual data upload utility
 
@@ -154,10 +168,14 @@ RELEASES:
 
 ### First-time setup (manual, one-time)
 ```bash
-npm install -g ./ccusage-agent-0.3.1.tgz
-ccusage-agent setup --server https://5kvqadz4mc.execute-api.ap-southeast-1.amazonaws.com --email user@example.com --interval 60
+npm install -g ./ccusage-agent-<version>.tgz
+ccusage-agent setup --email user@example.com --interval 60
 ccusage-agent sync --force
 ```
+
+The server URL is baked into the binary at build time (per stage). No `--server` needed.
+Use `--server <url>` only to override the built-in URL (e.g. local dev).
+Setup also fetches a dashboard registration link from `/api/register/link?email=...`.
 
 ### Agent commands
 ```bash
@@ -181,32 +199,39 @@ After setup, the agent runs automatically:
 
 ```bash
 # 1. Update version in be-agent/package.json and src/commands/update.ts and src/lib/pusher.ts
-# 2. Run publish script:
-./scripts/publish-agent.sh
-# This will: build → pack tgz → upload to S3 releases/ → update version.json
+# 2. Publish to each stage (builds with stage-specific SERVER_URL baked in):
+./scripts/publish-agent.sh --stage dev   # Builds with dev Lambda URL → uploads to ccusage-data-dev
+./scripts/publish-agent.sh --stage jit   # Builds with jit Lambda URL → uploads to ccusage-data-jit
 ```
 
 Teammates auto-update via `ccusage-agent update` (checks `/api/agent/version` → downloads presigned URL → installs globally → re-runs setup → sync --force).
 
 ## Deploy Process
 
-### Lambda server
+All deploy scripts accept `--stage <dev|jit>`. Stage config is centralized in `scripts/stage-config.sh`.
+
+### Orchestrator (deploy all or specific modules)
 ```bash
-cd lambda-server && pnpm build
-# Deploy via SAM/CDK to AWS Lambda
-# Env vars: AWS_REGION, BUCKET_NAME, AGGREGATOR_FUNCTION_NAME, ALLOWED_ORIGINS
+./scripts/deploy.sh --stage dev                         # Deploy ALL modules
+./scripts/deploy.sh --stage jit --only lambda           # Lambda only
+./scripts/deploy.sh --stage dev --only dashboard        # Dashboard only
+./scripts/deploy.sh --stage jit --only agent            # Agent only
+./scripts/deploy.sh --stage dev --only lambda,dashboard # Multiple modules
 ```
 
-### Dashboard
+### Individual module deploys
 ```bash
-./scripts/deploy-dashboard-s3.sh [API_URL]
-# Builds static export → uploads to S3 → invalidates CloudFront
-# Default API: https://5kvqadz4mc.execute-api.ap-southeast-1.amazonaws.com
+./scripts/deploy-lambda.sh --stage dev       # Lambda server (Serverless Framework)
+./scripts/deploy-dashboard.sh --stage jit    # Dashboard (S3 + CloudFront)
+./scripts/publish-agent.sh --stage dev       # Agent (S3 releases)
 ```
 
 ### Trigger aggregation (after deploy or data changes)
 ```bash
+# dev
 curl -X POST "https://5kvqadz4mc.execute-api.ap-southeast-1.amazonaws.com/api/admin/aggregate?force=true"
+# jit
+curl -X POST "https://eu9i1zr4x6.execute-api.ap-southeast-1.amazonaws.com/api/admin/aggregate?force=true"
 ```
 
 ## Development
@@ -237,13 +262,34 @@ cd be-agent && pnpm start sync --dry-run
 
 ## AWS Resources
 
-- **Lambda functions**: API handler (`lambda.ts`), Aggregator (`aggregator.ts`)
-- **S3 bucket**: `ccusage-data-dev` (all data + releases)
-- **S3 bucket (dashboard)**: `cc-usage-monitor-tvf` (static site)
-- **CloudFront**: Distribution `E1W8WZ55TBZY1P` for dashboard
-- **API Gateway**: `https://5kvqadz4mc.execute-api.ap-southeast-1.amazonaws.com`
 - **Region**: `ap-southeast-1`
 - **AWS Profile**: `2026-pik`
+- **Serverless Org**: `piktekk` (user: `pikt@qa.team`)
+
+### Per-Stage Resources
+
+| Resource | dev | jit |
+|----------|-----|-----|
+| **Lambda API URL** | `https://5kvqadz4mc.execute-api.ap-southeast-1.amazonaws.com` | `https://eu9i1zr4x6.execute-api.ap-southeast-1.amazonaws.com` |
+| **S3 Data Bucket** | `ccusage-data-dev` | `ccusage-data-jit` |
+| **S3 Dashboard Bucket** | `cc-usage-monitor-tvf` | `cc-usage-monitor-jit` |
+| **CloudFront Dist ID** | `E1W8WZ55TBZY1P` | `E3W5CFHO5Z8UU2` |
+| **CloudFront Domain** | `d1ohuii7czj4jp.cloudfront.net` | `dg2i6v0xgt3mw.cloudfront.net` |
+
+### Lambda Functions (per stage)
+- `ccusage-monitor-{stage}-api` — API handler (`lambda.ts`)
+- `ccusage-monitor-{stage}-aggregator` — Aggregator (`aggregator.ts`)
+
+## Dashboard Login Accounts
+
+Accounts are stored in `lambda-server/src/data/users.json` (SHA256 hashed passwords).
+
+| Email | Password | Role |
+|-------|----------|------|
+| `nghia@techvify.com.vn` | `admin123` | admin |
+| `nghiapham@techvify.com.vn` | `admin123` | admin |
+| `user@tvf.co.jp` | `agent123` | agent |
+| `member@techvify.com.vn` | `member123` | member |
 
 ## Data Paths Scanned (Agent)
 

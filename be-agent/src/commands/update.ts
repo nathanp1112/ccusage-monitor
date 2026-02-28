@@ -6,7 +6,7 @@ import { loadConfig } from '../lib/config.js';
 import { request } from 'undici';
 
 // Read version from package.json at build time (inlined by bundler)
-const CURRENT_VERSION = '0.3.1';
+const CURRENT_VERSION = '0.5.0';
 
 interface VersionResponse {
   success: boolean;
@@ -105,12 +105,7 @@ export async function updateCommand(options: { force?: boolean }): Promise<void>
   // 5. Re-run setup with existing config (uses the NEW binary)
   console.log('\nRestarting service...');
   try {
-    const setupCmd = [
-      'ccusage-agent', 'setup',
-      '--server', config.server_url,
-      '--email', config.email,
-      '--interval', String(config.sync_interval_minutes),
-    ].join(' ');
+    const setupCmd = `ccusage-agent setup --server ${config.server_url} --email ${config.email} --interval ${config.sync_interval_minutes}`;
     execSync(setupCmd, { stdio: 'inherit' });
   } catch (err) {
     console.error('  ✗ Setup failed:', (err as Error).message);
@@ -118,10 +113,10 @@ export async function updateCommand(options: { force?: boolean }): Promise<void>
     process.exit(1);
   }
 
-  // 6. Run sync --force
+  // 6. Run sync (migration sets offsets to current EOF, no --force needed)
   console.log('\nSyncing data...');
   try {
-    execSync('ccusage-agent sync --force', { stdio: 'inherit' });
+    execSync('ccusage-agent sync', { stdio: 'inherit' });
   } catch (err) {
     console.error('  ✗ Sync failed:', (err as Error).message);
   }

@@ -90,7 +90,7 @@ export async function putJsonToS3WithETag<T>(
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
-    Body: JSON.stringify(data, null, 2),
+    Body: JSON.stringify(data),
     ContentType: 'application/json',
     // If we have an ETag, require it to match (update existing)
     // If no ETag, require object to not exist (create new)
@@ -148,7 +148,7 @@ export async function putJsonToS3<T>(key: string, data: T): Promise<void> {
   const command = new PutObjectCommand({
     Bucket: BUCKET_NAME,
     Key: key,
-    Body: JSON.stringify(data, null, 2),
+    Body: JSON.stringify(data),
     ContentType: 'application/json',
   });
 

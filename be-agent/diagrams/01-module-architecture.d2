@@ -1,0 +1,332 @@
+direction: down
+
+# ──────────────────────────────────────────
+# Classes
+# ──────────────────────────────────────────
+classes: {
+  cli-cmd: {
+    style: {
+      fill: "#e8f4fd"
+      stroke: "#1e3a5f"
+      border-radius: 8
+      font-size: 13
+    }
+  }
+  cmd-handler: {
+    style: {
+      fill: "#dcedc8"
+      stroke: "#558b2f"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+  lib-module: {
+    style: {
+      fill: "#fff3e0"
+      stroke: "#e65100"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+  fs-node: {
+    style: {
+      fill: "#f3e5f5"
+      stroke: "#7b1fa2"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+  server-ep: {
+    style: {
+      fill: "#ffebee"
+      stroke: "#c62828"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+  os-svc: {
+    style: {
+      fill: "#e0f2f1"
+      stroke: "#00695c"
+      border-radius: 8
+      font-size: 12
+    }
+  }
+}
+
+# ──────────────────────────────────────────
+# CLI Entry
+# ──────────────────────────────────────────
+CLI: "index.ts — CLI Entry (Commander.js)" {
+  style: {
+    fill: "#e8f4fd"
+    stroke: "#1565c0"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  setup: "setup\n--email, --server?, --interval" { class: cli-cmd }
+  sync: "sync\n--force, --dry-run\n--verbose, --no-prompts" { class: cli-cmd }
+  status: "status" { class: cli-cmd }
+  update: "update\n--force" { class: cli-cmd }
+  uninstall: "uninstall" { class: cli-cmd }
+}
+
+# ──────────────────────────────────────────
+# Command Handlers
+# ──────────────────────────────────────────
+Commands: "commands/" {
+  style: {
+    fill: "#dcedc8"
+    stroke: "#558b2f"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  setupCmd: |md
+    **setup.ts**
+    Save config → discover paths
+    → install OS service
+    → fetch register link
+  | { class: cmd-handler }
+
+  pushCmd: |md
+    **push.ts**
+    Load config/state → collect
+    → push → save state
+  | { class: cmd-handler }
+
+  statusCmd: |md
+    **status.ts**
+    Display config, daemon PID,
+    sync state, tracked files
+  | { class: cmd-handler }
+
+  updateCmd: |md
+    **update.ts**
+    Check version → download tgz
+    → npm install -g → re-setup
+  | { class: cmd-handler }
+
+  uninstallCmd: |md
+    **uninstall.ts**
+    Remove launchd/systemd service
+  | { class: cmd-handler }
+}
+
+# ──────────────────────────────────────────
+# Library Modules
+# ──────────────────────────────────────────
+Libs: "lib/" {
+  style: {
+    fill: "#fff3e0"
+    stroke: "#e65100"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  config: |md
+    **config.ts**
+    ───────────────
+    • AgentConfig (server_url, email)
+    • AgentState (file_offsets, timestamps)
+    • BUILT_IN_SERVER_URL (build-time)
+    • discoverClaudePaths()
+    • load/save Config & State
+    • v1→v2 state migration
+  | { class: lib-module }
+
+  collector: |md
+    **collector.ts**
+    ───────────────
+    • Scan JSONL from byte offsets
+    • Parse usage entries (model, tokens)
+    • Extract user prompts (uuid, content)
+    • Discover projects via git remote
+    • Prune stale file offsets
+  | { class: lib-module }
+
+  pusher: |md
+    **pusher.ts**
+    ───────────────
+    • Batch entries @1000, prompts @500
+    • POST /api/sync with metadata
+    • Exponential backoff retry (5xx)
+    • Collect hostname + IP
+  | { class: lib-module }
+
+  commander: |md
+    **commander.ts**
+    ───────────────
+    • Poll GET /api/agent/commands
+    • Execute: revoke-token,
+      force-sync, update-config
+    • ACK back to server
+  | { class: lib-module }
+
+  pricing: |md
+    **pricing.ts**
+    ───────────────
+    • Fetch LiteLLM pricing (24h cache)
+    • Tiered cost calculation
+    • Model name fuzzy matching
+  | { class: lib-module }
+}
+
+# ──────────────────────────────────────────
+# Daemon
+# ──────────────────────────────────────────
+Daemon: "daemon.ts — Auto-Sync Loop" {
+  style: {
+    fill: "#fff8e1"
+    stroke: "#f57f17"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  syncCycle: "syncCycle()\ncollect → push → poll commands" {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#f57f17"
+      border-radius: 8
+    }
+  }
+  interval: "setInterval(syncCycle, N min)" {
+    style: {
+      fill: "#fff8e1"
+      stroke: "#f57f17"
+      border-radius: 8
+    }
+  }
+  interval -> syncCycle
+}
+
+# ──────────────────────────────────────────
+# Filesystem
+# ──────────────────────────────────────────
+FS: "Developer's Filesystem" {
+  style: {
+    fill: "#f3e5f5"
+    stroke: "#7b1fa2"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  claudePaths: |md
+    **Claude Data**
+    ~/.claude/projects/\*\*/\*.jsonl
+    ~/.config/claude/projects/\*\*/\*.jsonl
+    ~/.ccs/instances/\*/projects/\*\*/\*.jsonl
+  | {
+    shape: page
+    class: fs-node
+  }
+
+  agentDir: |md
+    **~/.ccusage-agent/**
+    ├── config.json
+    ├── state.json
+    ├── agent.log
+    └── agent.pid
+  | {
+    shape: page
+    class: fs-node
+  }
+}
+
+# ──────────────────────────────────────────
+# OS Service
+# ──────────────────────────────────────────
+OS: "OS Service" {
+  style: {
+    fill: "#e0f2f1"
+    stroke: "#00695c"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  launchd: "macOS: launchd\n~/Library/LaunchAgents/\ncom.ccusage.agent.plist" { class: os-svc }
+  systemd: "Linux: systemd\n~/.config/systemd/user/\nccusage-agent.service + .timer" { class: os-svc }
+}
+
+# ──────────────────────────────────────────
+# Server
+# ──────────────────────────────────────────
+Server: "Lambda Server" {
+  style: {
+    fill: "#ffebee"
+    stroke: "#c62828"
+    stroke-width: 2
+    font-size: 14
+    bold: true
+  }
+
+  apiSync: "POST /api/sync" { class: server-ep }
+  apiVersion: "GET /api/agent/version" { class: server-ep }
+  apiCommands: "GET /api/agent/commands" { class: server-ep }
+  apiRegister: "GET /api/register/link" { class: server-ep }
+}
+
+# ──────────────────────────────────────────
+# Connections: CLI → Commands
+# ──────────────────────────────────────────
+CLI.setup -> Commands.setupCmd
+CLI.sync -> Commands.pushCmd
+CLI.status -> Commands.statusCmd
+CLI.update -> Commands.updateCmd
+CLI.uninstall -> Commands.uninstallCmd
+
+# ──────────────────────────────────────────
+# Connections: Commands → Libs
+# ──────────────────────────────────────────
+Commands.setupCmd -> Libs.config
+Commands.pushCmd -> Libs.config
+Commands.pushCmd -> Libs.collector
+Commands.pushCmd -> Libs.pusher
+Commands.statusCmd -> Libs.config
+Commands.updateCmd -> Libs.config
+Commands.updateCmd -> Commands.setupCmd: "npm install -g\n+ re-run setup" {
+  style.stroke-dash: 5
+  style.stroke: "#888"
+}
+
+# ──────────────────────────────────────────
+# Connections: Daemon → Libs
+# ──────────────────────────────────────────
+Daemon.syncCycle -> Libs.config
+Daemon.syncCycle -> Libs.collector
+Daemon.syncCycle -> Libs.pusher
+Daemon.syncCycle -> Libs.commander
+
+# ──────────────────────────────────────────
+# Connections: Libs internal
+# ──────────────────────────────────────────
+Libs.collector -> Libs.config
+Libs.collector -> Libs.pricing
+Libs.pusher -> Libs.config
+
+# ──────────────────────────────────────────
+# Connections: to external
+# ──────────────────────────────────────────
+Libs.config <-> FS.agentDir: "read/write"
+Libs.collector -> FS.claudePaths: "scan JSONL"
+Libs.pusher -> Server.apiSync: "POST batches"
+Libs.commander -> Server.apiCommands: "poll + ACK"
+Commands.updateCmd -> Server.apiVersion: "check version"
+Commands.setupCmd -> Server.apiRegister: "fetch link"
+Commands.setupCmd -> OS.launchd: "install plist"
+Commands.setupCmd -> OS.systemd: "install service"
+OS.launchd -> Daemon: "every N min" {
+  style.stroke-dash: 5
+  style.stroke: "#00695c"
+}
+OS.systemd -> Daemon: "every N min" {
+  style.stroke-dash: 5
+  style.stroke: "#00695c"
+}

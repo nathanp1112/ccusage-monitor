@@ -31,9 +31,7 @@ import type {
   DailyRecord,
   UsageEntry,
   MemberRegistry,
-  MemberInfo,
   MemberProjects,
-  ProjectData,
   PromptMonthlyData,
   PromptRecord,
   SyncLog,
@@ -82,6 +80,8 @@ const syncRequestSchema = z.object({
   prompts: z.array(syncPromptSchema).optional(),
   hostname: z.string().optional(),
   agent_version: z.string().optional(),
+  local_ip: z.string().nullable().optional(),
+  public_ip: z.string().nullable().optional(),
 });
 
 // ============================================
@@ -202,7 +202,7 @@ syncRoute.post(
   async (c) => {
     const startTime = Date.now();
     const body = c.req.valid('json') as SyncRequest;
-    const { email, name, entries, projects, prompts, hostname, agent_version } = body;
+    const { email, name, entries, projects, prompts, hostname, agent_version, local_ip, public_ip } = body;
 
     // Handle empty entries - success with 0 inserted
     if (entries.length === 0) {
@@ -214,8 +214,15 @@ syncRoute.post(
     }
 
     try {
-      // Get or create member
-      const { memberId, isNewMember } = await getOrCreateMember(email, name);
+      // Resolve member + update lastSync in a single registry read/write
+      const publicIp = public_ip ?? c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ?? null;
+      const { memberId } = await resolveAndUpdateMember(email, name, {
+        hostname: hostname ?? null,
+        agentVersion: agent_version ?? null,
+        userAgent: c.req.header('user-agent') ?? null,
+        localIp: local_ip ?? null,
+        publicIp,
+      });
 
       // Group entries by year-month
       const entriesByMonth = new Map<string, SyncRequestEntry[]>();
@@ -230,56 +237,53 @@ syncRoute.post(
         entriesByMonth.get(key)!.push(entry);
       }
 
-      // Process each month's entries
+      // Process all months in parallel
+      const monthResults = await Promise.all(
+        Array.from(entriesByMonth.entries()).map(([monthKey, monthEntries]) => {
+          const [yearStr, monthStr] = monthKey.split('-');
+          return processMonthEntries(
+            memberId,
+            parseInt(yearStr, 10),
+            parseInt(monthStr, 10),
+            monthEntries
+          );
+        })
+      );
+
       let totalInserted = 0;
       let totalSkipped = 0;
-
-      for (const [monthKey, monthEntries] of entriesByMonth) {
-        const [yearStr, monthStr] = monthKey.split('-');
-        const year = parseInt(yearStr, 10);
-        const month = parseInt(monthStr, 10);
-
-        const { inserted, skipped } = await processMonthEntries(
-          memberId,
-          year,
-          month,
-          monthEntries
-        );
-
+      for (const { inserted, skipped } of monthResults) {
         totalInserted += inserted;
         totalSkipped += skipped;
       }
 
-      // Save project data if provided
-      if (projects && projects.length > 0) {
-        try {
-          await saveProjectData(memberId, projects);
-        } catch (projError) {
-          console.warn(`Failed to save project data for ${memberId}:`, projError);
-        }
-      }
-
-      // Save prompts if provided
-      let totalPromptsInserted = 0;
-      if (prompts && prompts.length > 0) {
-        try {
-          totalPromptsInserted = await savePrompts(memberId, prompts);
-        } catch (promptError) {
-          console.warn(`Failed to save prompts for ${memberId}:`, promptError);
-        }
-      }
-
-      // Update member lastSyncAt
-      await updateMemberLastSync(memberId, hostname, agent_version, c.req.header('user-agent'));
-
-      // Log sync operation
+      // Run independent operations in parallel:
+      // - projects, prompts, sync log
+      // (member registry already updated in resolveAndUpdateMember above)
       const now = new Date();
-      await logSyncOperation(memberId, now, totalInserted, totalSkipped, {
-        hostname: hostname ?? null,
-        agentVersion: agent_version ?? null,
-        userAgent: c.req.header('user-agent') ?? null,
-        clientIp: c.req.header('x-forwarded-for') ?? null,
-      });
+
+      await Promise.all([
+        // Save project data
+        projects && projects.length > 0
+          ? saveProjectData(memberId, projects).catch((e) =>
+              console.warn(`Failed to save project data for ${memberId}:`, e))
+          : undefined,
+
+        // Save prompts
+        prompts && prompts.length > 0
+          ? savePrompts(memberId, prompts).catch((e) =>
+              console.warn(`Failed to save prompts for ${memberId}:`, e))
+          : undefined,
+
+        // Log sync operation
+        logSyncOperation(memberId, now, totalInserted, totalSkipped, {
+          hostname: hostname ?? null,
+          agentVersion: agent_version ?? null,
+          userAgent: c.req.header('user-agent') ?? null,
+          clientIp: publicIp,
+          localIp: local_ip ?? null,
+        }),
+      ]);
 
       const duration = Date.now() - startTime;
       console.log(`Sync completed for ${email}: ${totalInserted} inserted, ${totalSkipped} skipped in ${duration}ms`);
@@ -321,11 +325,22 @@ syncRoute.post(
 // Member Registry Functions
 // ============================================
 
-async function getOrCreateMember(
+/**
+ * Single-pass member lookup + lastSync update.
+ * Reads registry once, creates member if needed, updates lastSync, writes once.
+ * Replaces separate getOrCreateMember + updateMemberLastSync (was 2 GETs + 2 PUTs → now 1 GET + 1 PUT).
+ */
+async function resolveAndUpdateMember(
   email: string,
-  name?: string
+  name: string | undefined,
+  syncMeta: {
+    hostname: string | null;
+    agentVersion: string | null;
+    userAgent: string | null;
+    localIp: string | null;
+    publicIp: string | null;
+  }
 ): Promise<{ memberId: string; isNewMember: boolean }> {
-  // Use withRetry to handle concurrent modifications via ETag
   return withRetry(async () => {
     const registryKey = getMemberRegistryKey();
     const registryWithETag = await getJsonFromS3WithETag<MemberRegistry>(registryKey);
@@ -334,7 +349,6 @@ async function getOrCreateMember(
     let etag: string | null;
 
     if (!registryWithETag) {
-      // Initialize registry if doesn't exist
       registry = {
         version: 1,
         lastUpdated: new Date().toISOString(),
@@ -346,68 +360,52 @@ async function getOrCreateMember(
       etag = registryWithETag.etag;
     }
 
+    const now = new Date().toISOString();
+    let memberId: string;
+    let isNewMember = false;
+
     // Find existing member by email
     const existingMember = Object.values(registry.members).find(
       (m) => m.email.toLowerCase() === email.toLowerCase()
     );
 
     if (existingMember) {
-      return { memberId: existingMember.id, isNewMember: false };
+      memberId = existingMember.id;
+      existingMember.lastSyncAt = now;
+      existingMember.updatedAt = now;
+      existingMember.lastSync = {
+        hostname: syncMeta.hostname,
+        localIp: syncMeta.localIp,
+        publicIp: syncMeta.publicIp,
+        userAgent: syncMeta.userAgent,
+        agentVersion: syncMeta.agentVersion,
+      };
+    } else {
+      memberId = generateUUID();
+      isNewMember = true;
+      registry.members[memberId] = {
+        id: memberId,
+        name: name || email.split('@')[0],
+        email: email.toLowerCase(),
+        role: 'member',
+        isActive: true,
+        createdAt: now,
+        updatedAt: now,
+        lastSyncAt: now,
+        lastSync: {
+          hostname: syncMeta.hostname,
+          localIp: syncMeta.localIp,
+          publicIp: syncMeta.publicIp,
+          userAgent: syncMeta.userAgent,
+          agentVersion: syncMeta.agentVersion,
+        },
+      };
     }
 
-    // Create new member
-    const memberId = generateUUID();
-    const now = new Date().toISOString();
-
-    const newMember: MemberInfo = {
-      id: memberId,
-      name: name || email.split('@')[0],
-      email: email.toLowerCase(),
-      role: 'member',
-      isActive: true,
-      createdAt: now,
-      updatedAt: now,
-      lastSyncAt: null,
-    };
-
-    registry.members[memberId] = newMember;
     registry.lastUpdated = now;
-
-    // Conditional write - fails if registry was modified since we read it
     await putJsonToS3WithETag(registryKey, registry, etag);
 
-    return { memberId, isNewMember: true };
-  }, { retryConditionalFailed: true });
-}
-
-async function updateMemberLastSync(
-  memberId: string,
-  hostname?: string,
-  agentVersion?: string,
-  userAgent?: string
-): Promise<void> {
-  return withRetry(async () => {
-    const registryKey = getMemberRegistryKey();
-    const registryWithETag = await getJsonFromS3WithETag<MemberRegistry>(registryKey);
-
-    if (!registryWithETag || !registryWithETag.data.members[memberId]) {
-      return;
-    }
-
-    const registry = registryWithETag.data;
-    const now = new Date().toISOString();
-    registry.members[memberId].lastSyncAt = now;
-    registry.members[memberId].updatedAt = now;
-    registry.members[memberId].lastSync = {
-      hostname: hostname ?? null,
-      clientIp: null,
-      userAgent: userAgent ?? null,
-      agentVersion: agentVersion ?? null,
-    };
-    registry.lastUpdated = now;
-
-    // Conditional write - retries on concurrent modification
-    await putJsonToS3WithETag(registryKey, registry, registryWithETag.etag);
+    return { memberId, isNewMember };
   }, { retryConditionalFailed: true });
 }
 
@@ -469,20 +467,23 @@ async function processMonthEntries(
       inserted++;
     }
 
-    // Update lastUpdated
+    // Skip writes entirely when no new entries (already processed month)
+    if (inserted === 0) {
+      return { inserted, skipped };
+    }
+
     monthData.lastUpdated = new Date().toISOString();
 
-    // Save to S3
-    await putJsonToS3(key, monthData);
+    // Save raw data and pre-aggregated summary in parallel
+    const aggKey = getAggregatedDataKey(memberId, year, month);
+    const aggregation = aggregateMonthData(monthData, year, month);
 
-    // Write pre-aggregated summary alongside raw data
-    try {
-      const aggKey = getAggregatedDataKey(memberId, year, month);
-      const aggregation = aggregateMonthData(monthData, year, month);
-      await putJsonToS3(aggKey, aggregation);
-    } catch (aggError) {
-      console.warn(`Failed to write aggregated data for ${memberId}/${year}-${month}:`, aggError);
-    }
+    await Promise.all([
+      putJsonToS3(key, monthData),
+      putJsonToS3(aggKey, aggregation).catch((aggError) => {
+        console.warn(`Failed to write aggregated data for ${memberId}/${year}-${month}:`, aggError);
+      }),
+    ]);
 
     return { inserted, skipped };
   });
@@ -502,6 +503,7 @@ async function logSyncOperation(
     agentVersion: string | null;
     userAgent: string | null;
     clientIp: string | null;
+    localIp: string | null;
   }
 ): Promise<void> {
   const year = syncTime.getFullYear();
@@ -527,6 +529,7 @@ async function logSyncOperation(
       recordsSkipped,
       hostname: metadata.hostname,
       clientIp: metadata.clientIp,
+      localIp: metadata.localIp,
       userAgent: metadata.userAgent,
       agentVersion: metadata.agentVersion,
     };
@@ -557,26 +560,29 @@ async function saveProjectData(
   }
 
   const now = new Date().toISOString();
+  let hasChanges = false;
 
   for (const project of projects) {
     const existing = memberProjects.projects[project.path];
     if (existing) {
-      // Update lastSeen and gitRepo
       existing.lastSeen = now;
       existing.gitRepo = project.git_repo;
+      hasChanges = true; // lastSeen updated
     } else {
-      // New project
       memberProjects.projects[project.path] = {
         path: project.path,
         gitRepo: project.git_repo,
         firstSeen: now,
         lastSeen: now,
       };
+      hasChanges = true;
     }
   }
 
-  memberProjects.lastUpdated = now;
-  await putJsonToS3(key, memberProjects);
+  if (hasChanges) {
+    memberProjects.lastUpdated = now;
+    await putJsonToS3(key, memberProjects);
+  }
 }
 
 // ============================================
@@ -600,52 +606,57 @@ async function savePrompts(
     promptsByMonth.get(key)!.push(prompt);
   }
 
-  let totalInserted = 0;
+  // Process all prompt months in parallel
+  const monthResults = await Promise.all(
+    Array.from(promptsByMonth.entries()).map(async ([monthKey, monthPrompts]) => {
+      const [yearStr, monthStr] = monthKey.split('-');
+      const year = parseInt(yearStr, 10);
+      const month = parseInt(monthStr, 10);
+      const key = getPromptsKey(memberId, year, month);
 
-  for (const [monthKey, monthPrompts] of promptsByMonth) {
-    const [yearStr, monthStr] = monthKey.split('-');
-    const year = parseInt(yearStr, 10);
-    const month = parseInt(monthStr, 10);
-    const key = getPromptsKey(memberId, year, month);
+      let promptData = await getJsonFromS3<PromptMonthlyData>(key);
 
-    let promptData = await getJsonFromS3<PromptMonthlyData>(key);
+      if (!promptData) {
+        promptData = {
+          memberId,
+          year,
+          month,
+          lastUpdated: new Date().toISOString(),
+          prompts: [],
+        };
+      }
 
-    if (!promptData) {
-      promptData = {
-        memberId,
-        year,
-        month,
-        lastUpdated: new Date().toISOString(),
-        prompts: [],
-      };
-    }
+      // Dedup by uuid
+      const existingUuids = new Set(promptData.prompts.map((p) => p.uuid));
+      const now = new Date().toISOString();
+      let monthInserted = 0;
 
-    // Dedup by uuid
-    const existingUuids = new Set(promptData.prompts.map((p) => p.uuid));
-    const now = new Date().toISOString();
+      for (const prompt of monthPrompts) {
+        if (existingUuids.has(prompt.uuid)) continue;
 
-    for (const prompt of monthPrompts) {
-      if (existingUuids.has(prompt.uuid)) continue;
+        promptData.prompts.push({
+          uuid: prompt.uuid,
+          sessionId: prompt.session_id,
+          timestamp: prompt.timestamp,
+          projectPath: prompt.project_path,
+          cwd: prompt.cwd,
+          content: prompt.content,
+          syncedAt: now,
+        });
+        monthInserted++;
+      }
 
-      const record: PromptRecord = {
-        uuid: prompt.uuid,
-        sessionId: prompt.session_id,
-        timestamp: prompt.timestamp,
-        projectPath: prompt.project_path,
-        cwd: prompt.cwd,
-        content: prompt.content,
-        syncedAt: now,
-      };
+      // Skip write if all prompts for this month were duplicates
+      if (monthInserted > 0) {
+        promptData.lastUpdated = now;
+        await putJsonToS3(key, promptData);
+      }
 
-      promptData.prompts.push(record);
-      totalInserted++;
-    }
+      return monthInserted;
+    })
+  );
 
-    promptData.lastUpdated = now;
-    await putJsonToS3(key, promptData);
-  }
-
-  return totalInserted;
+  return monthResults.reduce((sum, n) => sum + n, 0);
 }
 
 export default syncRoute;
