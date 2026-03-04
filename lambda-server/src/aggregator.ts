@@ -519,12 +519,13 @@ function generateMemberYearlyView(memberData: MemberAggregatedData): MemberYearl
 
     // Project breakdown for this month
     const projectBreakdown = Object.entries(monthAgg.projectBreakdown)
-      .sort((a, b) => b[1] - a[1])
+      .sort((a, b) => b[1].requestCount - a[1].requestCount)
       .slice(0, LIMITS.TOP_PROJECTS)
-      .map(([project, costUsd]) => ({
+      .map(([project, stats]) => ({
         project,
-        costUsd,
-        percentage: monthAgg.totals.costUsd > 0 ? (costUsd / monthAgg.totals.costUsd) * 100 : 0,
+        costUsd: stats.costUsd,
+        requestCount: stats.requestCount,
+        percentage: monthAgg.totals.costUsd > 0 ? (stats.costUsd / monthAgg.totals.costUsd) * 100 : 0,
       }));
 
     months[monthKey] = {

@@ -265,6 +265,7 @@ export interface MonthlyData {
     project: string;
     costUsd: number;
     percentage: number;
+    requestCount: number;
   }>;
 }
 
@@ -424,5 +425,5 @@ export interface MonthAggregation {
   dailyUsage: DayAggregation[];
   dailyModelUsage: DailyModelUsage[];
   modelBreakdown: Record<string, ModelBreakdown>;
-  projectBreakdown: Record<string, number>;
+  projectBreakdown: Record<string, { costUsd: number; requestCount: number }>;
 }

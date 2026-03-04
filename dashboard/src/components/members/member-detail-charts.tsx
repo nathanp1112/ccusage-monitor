@@ -9,10 +9,12 @@ import { UsageTrendChart } from '@/components/charts/usage-trend-chart'
 import { ModelDistributionChart } from '@/components/charts/model-distribution-chart'
 import { DailyModelUsageChart, type DailyModelData } from '@/components/charts/daily-model-usage-chart'
 import { UsageHeatMap, type DailyUsageData } from '@/components/charts/usage-heat-map'
+import { ProjectActivityChart, type ProjectActivityData } from '@/components/charts/project-activity-chart'
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import { formatCurrency, formatTokens } from '@/lib/utils'
 import { apiClient } from '@/lib/api-client'
 import { queryKeys } from '@/lib/query-keys'
+import { useSession } from '@/hooks/use-auth'
 
 interface MemberDetailChartsProps {
   memberId: string
@@ -45,6 +47,12 @@ interface MonthlyData {
   modelBreakdown: Array<{
     model: string
     costUsd: number
+    percentage: number
+  }>
+  projectBreakdown?: Array<{
+    project: string
+    costUsd: number
+    requestCount: number
     percentage: number
   }>
 }
@@ -106,6 +114,9 @@ const currentYear = new Date().getFullYear()
 const years = Array.from({ length: currentYear - 2023 }, (_, i) => 2024 + i)
 
 export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
+  const { data: session } = useSession()
+  const isAdmin = session?.role === 'admin'
+
   const now = new Date()
   const [selectedYear, setSelectedYear] = useState(now.getFullYear())
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth())
@@ -206,6 +217,16 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
       recordCount: d.recordCount,
     }))
   }, [currentMonthData?.dailyUsage])
+
+  // Project activity data for selected month
+  const projectActivityData = useMemo((): ProjectActivityData[] => {
+    if (!currentMonthData?.projectBreakdown) return []
+    return currentMonthData.projectBreakdown.map((p) => ({
+      project: p.project,
+      requestCount: p.requestCount,
+      costUsd: p.costUsd,
+    }))
+  }, [currentMonthData?.projectBreakdown])
 
   // Prompt count for selected month
   const promptCount = useMemo(() => {
@@ -343,6 +364,14 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
         data={dailyModelUsage}
         title={`Daily Token Usage by Model - ${monthName}`}
       />
+
+      {/* Project Activity — admin only */}
+      {isAdmin && projectActivityData.length > 0 && (
+        <ProjectActivityChart
+          data={projectActivityData}
+          title={`Project Activity - ${monthName}`}
+        />
+      )}
     </div>
   )
 }

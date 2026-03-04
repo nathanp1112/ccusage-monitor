@@ -96,7 +96,11 @@ export function aggregateMonthData(rawData: RawMonthlyData | null, year: number,
     // Aggregate project breakdown
     for (const entry of dailyRecord.entries) {
       const project = entry.projectPath || 'Unknown';
-      result.projectBreakdown[project] = addCost(result.projectBreakdown[project] || 0, entry.costUsd);
+      if (!result.projectBreakdown[project]) {
+        result.projectBreakdown[project] = { costUsd: 0, requestCount: 0 };
+      }
+      result.projectBreakdown[project].costUsd = addCost(result.projectBreakdown[project].costUsd, entry.costUsd);
+      result.projectBreakdown[project].requestCount += 1;
     }
   }
 
