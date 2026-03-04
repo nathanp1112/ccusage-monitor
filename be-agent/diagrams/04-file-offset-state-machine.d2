@@ -70,11 +70,18 @@ ExistingFile: "EXISTING FILE\nCompare sizes" {
     style.font-size: 12
   }
 
-  Unchanged: "UNCHANGED\nsize == offset" {
+  # ── size == offset ──
+  Unchanged: "SAME SIZE\nsize == offset" {
     style.fill: "#e0e0e0"
     style.stroke: "#616161"
     style.border-radius: 8
     style.font-size: 12
+  }
+  FpCheckSame: "Verify fingerprint\nSHA-256(first 512 bytes)\nvs stored hash" {
+    shape: diamond
+    style.fill: "#e1bee7"
+    style.stroke: "#6a1b9a"
+    style.font-size: 11
   }
   SkipFile: "SKIP\nZero I/O\n(most common path)" {
     style.fill: "#e0e0e0"
@@ -83,20 +90,40 @@ ExistingFile: "EXISTING FILE\nCompare sizes" {
     style.font-size: 11
     style.italic: true
   }
+  ReplacedSame: "FILE REPLACED\n(same size, different content)\nReset offset = 0" {
+    style.fill: "#ffcdd2"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+    style.font-size: 11
+  }
 
-  Appended: "APPENDED\nsize > offset" {
+  # ── size > offset ──
+  Appended: "LARGER\nsize > offset" {
     style.fill: "#c8e6c9"
     style.stroke: "#2e7d32"
     style.border-radius: 8
     style.font-size: 12
   }
-  ReadIncremental: "Read from offset\ncreateReadStream(start: offset)\nJSONL is append-only" {
+  FpCheckGrown: "Verify fingerprint\nSHA-256(first 512 bytes)\nvs stored hash" {
+    shape: diamond
+    style.fill: "#e1bee7"
+    style.stroke: "#6a1b9a"
+    style.font-size: 11
+  }
+  ReadIncremental: "Read from offset\ncreateReadStream(start: offset)\nSame file, appended" {
     style.fill: "#dcedc8"
     style.stroke: "#558b2f"
     style.border-radius: 8
     style.font-size: 12
   }
+  ReplacedLarger: "FILE REPLACED\n(larger, different head)\nReset offset = 0" {
+    style.fill: "#ffcdd2"
+    style.stroke: "#c62828"
+    style.border-radius: 8
+    style.font-size: 11
+  }
 
+  # ── size < offset ──
   Truncated: "TRUNCATED\nsize < offset" {
     style.fill: "#ffcdd2"
     style.stroke: "#c62828"
@@ -110,11 +137,22 @@ ExistingFile: "EXISTING FILE\nCompare sizes" {
     style.font-size: 12
   }
 
+  # ── Size comparison ──
   CompareSize -> Unchanged: "=="
   CompareSize -> Appended: ">"
   CompareSize -> Truncated: "<"
-  Unchanged -> SkipFile
-  Appended -> ReadIncremental
+
+  # ── Same size path ──
+  Unchanged -> FpCheckSame
+  FpCheckSame -> SkipFile: "match"
+  FpCheckSame -> ReplacedSame: "mismatch"
+
+  # ── Larger path ──
+  Appended -> FpCheckGrown
+  FpCheckGrown -> ReadIncremental: "match"
+  FpCheckGrown -> ReplacedLarger: "mismatch"
+
+  # ── Truncated path ──
   Truncated -> ResetAndRead
 }
 
@@ -177,7 +215,7 @@ ParseLines: "Parse JSONL Lines" {
 }
 
 # ── Save & Done ──
-SaveOffset: "Save offset\nfile_offsets[file] = fileSize" {
+SaveOffset: "Save offset + fingerprint\nfile_offsets[file] = {\n  byteOffset: fileSize,\n  fingerprint: SHA-256(head)\n}" {
   style.fill: "#c8e6c9"
   style.stroke: "#2e7d32"
   style.border-radius: 8
@@ -201,6 +239,8 @@ NewFile -> ReadAll
 ReadAll -> ParseLines.ReadLine
 ExistingFile.ReadIncremental -> ParseLines.ReadLine
 ExistingFile.ResetAndRead -> ParseLines.ReadLine
+ExistingFile.ReplacedSame -> ParseLines.ReadLine: "re-read all"
+ExistingFile.ReplacedLarger -> ParseLines.ReadLine: "re-read all"
 
 ParseLines.EOF -> SaveOffset
 ExistingFile.SkipFile -> Done

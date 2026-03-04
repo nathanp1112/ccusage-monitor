@@ -39,19 +39,18 @@ app.get('/link', (c) => {
   return c.json({ success: true, link: item.link });
 });
 
-// POST /update — update an item's data field by matching data value
+// POST /update — update an item by matching email, optionally update data and link
 app.post('/update', async (c) => {
-  const { data, link } = await c.req.json<{ data: string; link?: string }>();
-  if (!data) {
-    return c.json({ success: false, error: 'Missing data param' }, 400);
+  const { email, data, link } = await c.req.json<{ email?: string; data?: string; link?: string }>();
+  if (!email) {
+    return c.json({ success: false, error: 'Missing email param' }, 400);
   }
-  const item = store.find((i) => i.data === data);
+  const item = store.find((i) => i.email === email);
   if (!item) {
     return c.json({ success: false, error: 'Not found' }, 404);
   }
-  if (link !== undefined) {
-    item.link = link;
-  }
+  if (data !== undefined) item.data = data;
+  if (link !== undefined) item.link = link;
   return c.json({ success: true, data: item });
 });
 

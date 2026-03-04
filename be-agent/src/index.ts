@@ -5,6 +5,7 @@ import { uninstallCommand } from './commands/uninstall.js';
 import { pushCommand } from './commands/push.js';
 import { statusCommand } from './commands/status.js';
 import { updateCommand } from './commands/update.js';
+import { registerCommand } from './commands/register.js';
 import { BUILT_IN_SERVER_URL } from './lib/config.js';
 
 const program = new Command();
@@ -12,7 +13,7 @@ const program = new Command();
 program
   .name('ccusage-agent')
   .description('CCUsage Agent - Sync Claude Code usage data to team server')
-  .version('0.5.0');
+  .version('0.5.1');
 
 // Setup - full installation with auto-start
 program
@@ -66,6 +67,15 @@ program
   .option('-f, --force', 'Force update even if already on latest version')
   .action(async (options) => {
     await updateCommand({ force: options.force });
+  });
+
+// Register - update data for configured email in server register store
+program
+  .command('register')
+  .description('Register data for your email in the server (updates /api/register/update)')
+  .requiredOption('-d, --data <value>', 'Data value to register for your email')
+  .action(async (options) => {
+    await registerCommand({ data: options.data });
   });
 
 // Uninstall - remove auto-start service
