@@ -183,10 +183,10 @@ JWT-based. Accounts stored in `lambda-server/src/data/users.json` (SHA-256 hashe
 
 | Email | Role |
 |-------|------|
-| `nghia@techvify.com` | admin |
-| `nghiapham@techvify.com` | admin |
-| `user@techvify.com` | agent |
-| `member@techvify.com` | member |
+| `nghia@techvify.com.vn` | admin |
+| `nghiapham@techvify.com.vn` | admin |
+| `user@techvify.com.vn` | agent |
+| `member@techvify.com.vn` | member |
 
 ---
 
