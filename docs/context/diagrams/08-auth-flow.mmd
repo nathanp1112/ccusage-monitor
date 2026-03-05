@@ -1,0 +1,82 @@
+sequenceDiagram
+    participant User
+    participant Dashboard
+    participant AuthGuard
+    participant ApiClient
+    participant Lambda
+    participant UsersJSON as users.json
+
+    Note over User,UsersJSON: Login Flow
+
+    User->>Dashboard: Enter email + password
+    Dashboard->>ApiClient: POST /api/auth/login
+    ApiClient->>Lambda: POST /api/auth/login<br/>{email, password}
+    Lambda->>UsersJSON: Read users.json from S3
+    UsersJSON-->>Lambda: User records
+    Lambda->>Lambda: SHA-256 hash password<br/>+ timingSafeEqual compare
+    alt Credentials valid
+        Lambda->>Lambda: Sign JWT access token (60 min)<br/>+ refresh token (20 days)
+        Lambda-->>ApiClient: 200 {accessToken, refreshToken, user}
+        ApiClient-->>Dashboard: Store tokens in localStorage
+        Dashboard-->>User: Redirect to dashboard
+    else Credentials invalid
+        Lambda-->>ApiClient: 401 Unauthorized
+        ApiClient-->>Dashboard: Show error
+        Dashboard-->>User: Display error message
+    end
+
+    Note over User,UsersJSON: Authenticated API Request
+
+    Dashboard->>ApiClient: Request data
+    ApiClient->>ApiClient: Attach Authorization:<br/>Bearer {accessToken}
+    ApiClient->>Lambda: GET /api/members (with Bearer token)
+    Lambda->>Lambda: Validate JWT signature + expiry
+    alt Token valid
+        Lambda-->>ApiClient: 200 {data}
+        ApiClient-->>Dashboard: Display data
+    else Token expired
+        Lambda-->>ApiClient: 401 Unauthorized
+    end
+
+    Note over User,UsersJSON: Token Refresh Flow
+
+    ApiClient->>ApiClient: Intercept 401 response
+    ApiClient->>Lambda: POST /api/auth/refresh<br/>{refreshToken}
+    Lambda->>Lambda: Validate refresh JWT
+    alt Refresh token valid
+        Lambda->>Lambda: Issue new access token (60 min)<br/>+ new refresh token (20 days)
+        Lambda-->>ApiClient: 200 {accessToken, refreshToken}
+        ApiClient->>ApiClient: Update localStorage
+        ApiClient->>Lambda: Retry original request<br/>with new access token
+        Lambda-->>ApiClient: 200 {data}
+        ApiClient-->>Dashboard: Display data
+    else Refresh token expired
+        Lambda-->>ApiClient: 401 Unauthorized
+        ApiClient-->>Dashboard: Clear tokens + query cache
+        Dashboard-->>User: Redirect to /login
+    end
+
+    Note over User,UsersJSON: Logout Flow
+
+    User->>Dashboard: Click logout
+    Dashboard->>ApiClient: POST /api/auth/logout
+    ApiClient->>Lambda: POST /api/auth/logout
+    Lambda-->>ApiClient: 200 OK (no-op server side)
+    ApiClient->>ApiClient: Clear tokens from localStorage<br/>+ clear query cache
+    ApiClient-->>Dashboard: Tokens cleared
+    Dashboard-->>User: Redirect to /login
+
+    Note over User,UsersJSON: Session Check (on mount)
+
+    Dashboard->>AuthGuard: Layout mounts
+    AuthGuard->>AuthGuard: Check hasTokens()<br/>in localStorage
+    alt No tokens
+        AuthGuard-->>Dashboard: Redirect to /login
+    else Tokens exist
+        AuthGuard->>ApiClient: GET /api/auth/me
+        ApiClient->>Lambda: GET /api/auth/me<br/>with Bearer token
+        Lambda->>Lambda: Validate JWT
+        Lambda-->>ApiClient: 200 {user}
+        ApiClient-->>AuthGuard: User data
+        AuthGuard-->>Dashboard: Render dashboard<br/>+ display user in navbar
+    end

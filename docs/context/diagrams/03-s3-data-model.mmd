@@ -1,0 +1,80 @@
+flowchart TD
+    subgraph LEGEND["S3 Bucket: ccusage-data"]
+        style LEGEND fill:#fafafa,stroke:#424242,stroke-width:2px
+        direction TB
+    end
+
+    subgraph INPUT["INPUT LAYER (Written by Sync Endpoint)"]
+        style INPUT fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+
+        REGISTRY["members/index.json\n---\nMemberRegistry\n---\nmembers: Map of email to id\nid: string (UUID)\nemail: string\ndisplayName: string\nrole: admin | member\ncreatedAt: ISO timestamp\nlastSyncAt: ISO timestamp\nsyncCount: number"]
+        style REGISTRY fill:#c8e6c9,stroke:#388e3c
+
+        RAW["raw/{memberId}/{year}-{month}.json\n---\nRawMonthlyData\n---\nrecords: Map of day to DayRecord\nDayRecord.entries: UsageEntry[]\nUsageEntry: uuid, timestamp, model,\ninputTokens, outputTokens, cacheRead,\ncacheWrite, cost, sessionId, project"]
+        style RAW fill:#c8e6c9,stroke:#388e3c
+
+        AGG["aggregated/{memberId}/{year}-{month}.json\n---\nMonthAggregation\n---\nmemberId, month, year\ntotalCost, totalInputTokens,\ntotalOutputTokens, totalCacheRead\nmodelBreakdown: per-model stats\ndailyBreakdown: per-day stats\nprojectBreakdown: per-project stats\nsessionCount, entryCount"]
+        style AGG fill:#c8e6c9,stroke:#388e3c
+
+        SYNCLOG["sync-logs/{year}-{month}/{memberId}.json\n---\nSyncLog\n---\nsyncs: SyncRecord[]\nSyncRecord: timestamp, hostname,\nip, userAgent, entriesReceived,\nentriesNew, entriesDuplicate,\nbatchId, duration"]
+        style SYNCLOG fill:#c8e6c9,stroke:#388e3c
+
+        PROJECTS["projects/{memberId}.json\n---\nMemberProjects\n---\nprojects: ProjectInfo[]\nProjectInfo: path, gitRemote,\nfirstSeen, lastSeen, entryCount"]
+        style PROJECTS fill:#c8e6c9,stroke:#388e3c
+
+        PROMPTS["prompts/{memberId}/{year}-{month}.json\n---\nPromptMonthlyData\n---\nprompts: PromptEntry[]\nPromptEntry: uuid, timestamp,\nsessionId, project, type,\ncontent (user/assistant text)"]
+        style PROMPTS fill:#c8e6c9,stroke:#388e3c
+
+        COMMANDS["commands/{memberId}/queue.json\n---\nCommandQueue\n---\ncommands: Command[]\nCommand: id, type, status,\ncreatedAt, acknowledgedAt,\npayload (revoke-token,\nforce-sync, update, etc.)"]
+        style COMMANDS fill:#c8e6c9,stroke:#388e3c
+    end
+
+    subgraph OUTPUT["OUTPUT LAYER (Written by Aggregator Lambda)"]
+        style OUTPUT fill:#e8eaf6,stroke:#283593,stroke-width:2px
+
+        DASHBOARD["views/dashboard.json\n---\nDashboardView\n---\ngeneratedAt, period\ntotalMembers, activeMembers\ntotalCost, totalTokens\nmodelDistribution: per-model %\ndailyTrend: 30-day series\ntopMembers: ranked by cost\ncomparisonVsPrevMonth"]
+        style DASHBOARD fill:#c5cae9,stroke:#3949ab
+
+        MEMBERSVIEW["views/members.json\n---\nMembersView\n---\nmembers: MemberSummary[]\nMemberSummary: id, email, name,\ncurrentMonth (cost, tokens, sessions),\nprevMonth (cost, tokens, sessions),\nlastSyncAt, trend (up/down/flat)"]
+        style MEMBERSVIEW fill:#c5cae9,stroke:#3949ab
+
+        MEMBERDETAIL["views/members/{memberId}/{year}.json\n---\nMemberYearlyView\n---\nmemberId, year\nmonths: 12x MonthDetail\nMonthDetail: month, totalCost,\ntotalTokens, modelBreakdown,\ndailyBreakdown, projectBreakdown,\nsessionCount"]
+        style MEMBERDETAIL fill:#c5cae9,stroke:#3949ab
+    end
+
+    subgraph METADATA["METADATA"]
+        style METADATA fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+        META["meta/last-processed.json\n---\nProcessingMeta\n---\nlastRunAt: ISO timestamp\nduration: ms\nmembersProcessed: number\nstatus: success | error"]
+        style META fill:#ffe0b2,stroke:#ef6c00
+
+        RELEASES["releases/\n---\nversion.json: latest version,\nchecksum, publishedAt\nccusage-agent-*.tgz:\nagent binaries"]
+        style RELEASES fill:#ffe0b2,stroke:#ef6c00
+    end
+
+    subgraph PIPELINE["Data Pipeline Flow"]
+        style PIPELINE fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+        P1["1. Sync writes raw/"]
+        P2["2. Sync computes aggregated/"]
+        P3["3. Aggregator reads aggregated/"]
+        P4["4. Aggregator writes views/"]
+        style P1 fill:#e1bee7,stroke:#7b1fa2
+        style P2 fill:#e1bee7,stroke:#7b1fa2
+        style P3 fill:#e1bee7,stroke:#7b1fa2
+        style P4 fill:#e1bee7,stroke:#7b1fa2
+        P1 --> P2 --> P3 --> P4
+    end
+
+    REGISTRY -->|"memberId used\nas partition key"| RAW
+    REGISTRY -->|"memberId"| AGG
+    REGISTRY -->|"memberId"| SYNCLOG
+    REGISTRY -->|"memberId"| PROJECTS
+    REGISTRY -->|"memberId"| PROMPTS
+    REGISTRY -->|"memberId"| COMMANDS
+
+    RAW -->|"Source data for\naggregation"| AGG
+    AGG -->|"Input for\nview generation"| DASHBOARD
+    AGG -->|"Input for\nview generation"| MEMBERSVIEW
+    AGG -->|"Input for\nview generation"| MEMBERDETAIL
+
+    REGISTRY -->|"Member list for\naggregation"| MEMBERSVIEW

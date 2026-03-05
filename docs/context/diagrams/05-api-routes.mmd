@@ -1,0 +1,76 @@
+flowchart LR
+    CLIENT["Clients<br/>(Agent / Dashboard / Admin)"]
+
+    subgraph SYNC["Sync Route<br/>/api/sync"]
+        S1["POST /api/sync<br/>Receive agent data<br/>(entries, projects, prompts)"]
+    end
+
+    subgraph DASHBOARD["Dashboard Route<br/>/api/dashboard"]
+        D1["GET /api/dashboard<br/>Team-wide summary"]
+        D2["GET /api/dashboard/model-distribution<br/>Model usage breakdown"]
+        D3["GET /api/dashboard/meta<br/>Aggregator metadata"]
+    end
+
+    subgraph MEMBERS["Members Route<br/>/api/members"]
+        M1["GET /api/members<br/>Member list"]
+        M2["GET /api/members/:id?year=<br/>Yearly detail"]
+        M3["GET /api/members/:id/raw?year=&month=<br/>Raw usage records"]
+    end
+
+    subgraph AGENT["Agent Route<br/>/api/agent"]
+        A1["GET /api/agent/version<br/>Latest release info"]
+        A2["GET /api/agent/commands?email=<br/>Poll pending commands"]
+        A3["POST /api/agent/commands/:id/ack<br/>Acknowledge command"]
+    end
+
+    subgraph ADMIN["Admin Route<br/>/api/admin"]
+        AD1["POST /api/admin/aggregate<br/>Trigger aggregation"]
+        AD2["GET /api/admin/status<br/>System status"]
+        AD3["POST /api/admin/commands<br/>Create command"]
+        AD4["GET /api/admin/commands/:memberId<br/>Command history"]
+    end
+
+    subgraph AUTH["Auth Route<br/>/api/auth"]
+        AU1["POST /api/auth/login<br/>Authenticate user"]
+        AU2["POST /api/auth/refresh<br/>Refresh tokens"]
+        AU3["POST /api/auth/logout<br/>End session"]
+        AU4["GET /api/auth/me<br/>Current user info"]
+    end
+
+    subgraph REGISTER["Register Route<br/>/api/register"]
+        R1["GET /api/register<br/>List registered members"]
+        R2["PUT /api/register<br/>Replace member registry"]
+        R3["GET /api/register/link<br/>Get registration link"]
+        R4["POST /api/register/update<br/>Update member info"]
+    end
+
+    CLIENT --> SYNC
+    CLIENT --> DASHBOARD
+    CLIENT --> MEMBERS
+    CLIENT --> AGENT
+    CLIENT --> ADMIN
+    CLIENT --> AUTH
+    CLIENT --> REGISTER
+
+    style AU4 fill:#ff9999,stroke:#cc0000,color:#000
+    style S1 fill:#d4edda,stroke:#28a745,color:#000
+    style D1 fill:#d4edda,stroke:#28a745,color:#000
+    style D2 fill:#d4edda,stroke:#28a745,color:#000
+    style D3 fill:#d4edda,stroke:#28a745,color:#000
+    style M1 fill:#d4edda,stroke:#28a745,color:#000
+    style M2 fill:#d4edda,stroke:#28a745,color:#000
+    style M3 fill:#d4edda,stroke:#28a745,color:#000
+    style A1 fill:#d4edda,stroke:#28a745,color:#000
+    style A2 fill:#d4edda,stroke:#28a745,color:#000
+    style A3 fill:#d4edda,stroke:#28a745,color:#000
+    style AD1 fill:#d4edda,stroke:#28a745,color:#000
+    style AD2 fill:#d4edda,stroke:#28a745,color:#000
+    style AD3 fill:#d4edda,stroke:#28a745,color:#000
+    style AD4 fill:#d4edda,stroke:#28a745,color:#000
+    style AU1 fill:#d4edda,stroke:#28a745,color:#000
+    style AU2 fill:#d4edda,stroke:#28a745,color:#000
+    style AU3 fill:#d4edda,stroke:#28a745,color:#000
+    style R1 fill:#d4edda,stroke:#28a745,color:#000
+    style R2 fill:#d4edda,stroke:#28a745,color:#000
+    style R3 fill:#d4edda,stroke:#28a745,color:#000
+    style R4 fill:#d4edda,stroke:#28a745,color:#000

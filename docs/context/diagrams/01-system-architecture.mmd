@@ -1,0 +1,117 @@
+flowchart TD
+    subgraph DEV["Developer Machine"]
+        style DEV fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+        JSONL["~/.claude/projects/*.jsonl\n~/.ccs/instances/*/projects/*"]
+        style JSONL fill:#c8e6c9,stroke:#388e3c
+
+        subgraph AGENT["be-agent (Node.js CLI)"]
+            style AGENT fill:#a5d6a7,stroke:#2e7d32,stroke-width:2px
+            PARSE["Parse JSONL\n(collector.ts)"]
+            PUSH["Push Data\n(pusher.ts)"]
+            POLL["Poll Commands\n(commander.ts)"]
+            UPDATE["Auto-Update\n(update.ts)"]
+            DAEMON["Daemon\n(launchd / systemd)"]
+            style PARSE fill:#81c784,stroke:#388e3c
+            style PUSH fill:#81c784,stroke:#388e3c
+            style POLL fill:#81c784,stroke:#388e3c
+            style UPDATE fill:#81c784,stroke:#388e3c
+            style DAEMON fill:#66bb6a,stroke:#2e7d32
+        end
+    end
+
+    subgraph AWS["AWS Cloud (ap-southeast-1)"]
+        style AWS fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+        subgraph APIGW["API Gateway"]
+            style APIGW fill:#ffe0b2,stroke:#ef6c00
+            ENDPOINT["HTTP API Endpoint"]
+            style ENDPOINT fill:#ffcc80,stroke:#f57c00
+        end
+
+        subgraph LAMBDA["Lambda Functions"]
+            style LAMBDA fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+            API["Lambda API\n(Hono Server)"]
+            AGG["Lambda Aggregator\n(Hourly via EventBridge)"]
+            style API fill:#90caf9,stroke:#1976d2
+            style AGG fill:#90caf9,stroke:#1976d2
+        end
+
+        subgraph S3["S3 Bucket (ccusage-data)"]
+            style S3 fill:#ffe0b2,stroke:#ef6c00,stroke-width:2px
+            RAW["raw/\n(Source of Truth)"]
+            AGGREGATED["aggregated/\n(Monthly Summaries)"]
+            VIEWS["views/\n(Dashboard-Ready JSON)"]
+            MEMBERS["members/index.json\n(Registry)"]
+            COMMANDS["commands/\n(Admin Queue)"]
+            RELEASES["releases/\n(Agent Binaries)"]
+            style RAW fill:#ffcc80,stroke:#f57c00
+            style AGGREGATED fill:#ffcc80,stroke:#f57c00
+            style VIEWS fill:#ffcc80,stroke:#f57c00
+            style MEMBERS fill:#ffcc80,stroke:#f57c00
+            style COMMANDS fill:#ffcc80,stroke:#f57c00
+            style RELEASES fill:#ffcc80,stroke:#f57c00
+        end
+
+        subgraph CF["CloudFront"]
+            style CF fill:#ffe0b2,stroke:#ef6c00
+            CDN["Distribution\nE1W8WZ55TBZY1P"]
+            style CDN fill:#ffcc80,stroke:#f57c00
+        end
+
+        S3DASH["S3 Dashboard Bucket\n(cc-usage-monitor-tvf)"]
+        style S3DASH fill:#ffcc80,stroke:#f57c00
+    end
+
+    subgraph DASH["Dashboard (Next.js 15 SPA)"]
+        style DASH fill:#e8eaf6,stroke:#283593,stroke-width:2px
+        FETCH["Fetch Views\n(api-client.ts)"]
+        ADAPT["API Adapters\n(api-adapters.ts)"]
+        CHARTS["Recharts\nVisualizations"]
+        AUTH["Auth (JWT)"]
+        style FETCH fill:#c5cae9,stroke:#3949ab
+        style ADAPT fill:#c5cae9,stroke:#3949ab
+        style CHARTS fill:#c5cae9,stroke:#3949ab
+        style AUTH fill:#c5cae9,stroke:#3949ab
+    end
+
+    subgraph ADMIN["Admin"]
+        style ADMIN fill:#fce4ec,stroke:#c62828,stroke-width:2px
+        ADMINU["Admin User"]
+        style ADMINU fill:#f8bbd0,stroke:#d32f2f
+    end
+
+    JSONL -->|"Read & Parse"| PARSE
+    DAEMON -->|"Triggers every N min"| PARSE
+    PARSE --> PUSH
+
+    PUSH -->|"POST /api/sync\n(entries@1000/batch\nprompts@500/batch)"| ENDPOINT
+    POLL -->|"GET /api/agent/commands"| ENDPOINT
+    UPDATE -->|"GET /api/agent/version"| ENDPOINT
+
+    ENDPOINT --> API
+
+    API -->|"Store entries"| RAW
+    API -->|"Compute summaries"| AGGREGATED
+    API -->|"Read/write"| MEMBERS
+    API -->|"Store sync logs,\nprojects, prompts"| S3
+
+    AGG -->|"Read"| AGGREGATED
+    AGG -->|"Write"| VIEWS
+
+    API -->|"Read commands"| COMMANDS
+    COMMANDS -->|"Pending commands"| API
+    API -->|"Return commands"| ENDPOINT
+
+    API -->|"Presigned URL"| RELEASES
+    RELEASES -->|"Download binary"| UPDATE
+
+    CDN --> S3DASH
+    FETCH -->|"GET /api/dashboard\nGET /api/members\nGET /api/members/:id"| ENDPOINT
+    API -->|"Read"| VIEWS
+    FETCH --> ADAPT --> CHARTS
+
+    ADMINU -->|"POST /api/admin/commands"| ENDPOINT
+    API -->|"Write command"| COMMANDS
+    ADMINU -->|"POST /api/admin/aggregate"| ENDPOINT
+
+    CDN -->|"Serve SPA"| FETCH

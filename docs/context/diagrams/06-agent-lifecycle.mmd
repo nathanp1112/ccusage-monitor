@@ -1,0 +1,50 @@
+flowchart TD
+    subgraph SETUP["Setup Phase: ccusage-agent setup --email X"]
+        SE1["User runs setup command"] --> SE2["Save config.json<br/>(server_url, email, interval)"]
+        SE2 --> SE3["Discover Claude paths"]
+        SE3 --> SE3a["~/.claude/projects/*<br/>(Native Claude Code)"]
+        SE3 --> SE3b["~/.config/claude/projects/*<br/>(Alternative location)"]
+        SE3 --> SE3c["~/.ccs/instances/*/projects/*<br/>(CCS multi-instance)"]
+        SE3a --> SE4{"Detect OS"}
+        SE3b --> SE4
+        SE3c --> SE4
+        SE4 -->|macOS| SE5a["Install launchd plist<br/>~/Library/LaunchAgents/<br/>com.ccusage.agent.plist"]
+        SE4 -->|Linux| SE5b["Install systemd<br/>service + timer<br/>~/.config/systemd/user/"]
+        SE5a --> SE6["Trigger first sync"]
+        SE5b --> SE6
+    end
+
+    subgraph SYNC["Sync Cycle (every N minutes via OS scheduler)"]
+        SY1["loadConfig()"] --> SY2["loadState()<br/>(byte offsets, fingerprints)"]
+        SY2 --> SY3["collectUsageData()<br/>Incremental parsing via<br/>byte offsets + fingerprints"]
+        SY3 --> SY4["pushToServer()<br/>Batched uploads:<br/>entries@1000/batch<br/>prompts@500/batch"]
+        SY4 --> SY5["saveState()<br/>Update offsets + fingerprints"]
+        SY5 --> SY6["pollAndExecuteCommands()"]
+    end
+
+    subgraph MANUAL["Manual Sync"]
+        MA1["ccusage-agent sync"] -->|"default"| MA2["Run same sync cycle once<br/>(incremental)"]
+        MA1 -->|"--force flag"| MA3["Reset all byte offsets<br/>to zero"] --> MA4["Run full sync cycle<br/>(all historical data)"]
+    end
+
+    subgraph UPDATE["Update Flow: ccusage-agent update"]
+        UP1["GET /api/agent/version"] --> UP2{"Compare semver<br/>local vs remote"}
+        UP2 -->|"newer available"| UP3["Download presigned URL<br/>(S3, 10 min expiry)"]
+        UP2 -->|"up to date"| UP2a["Skip update"]
+        UP3 --> UP4["npm install -g<br/>(new .tgz package)"]
+        UP4 --> UP5["Re-run setup<br/>(preserve config)"]
+        UP5 --> UP6["sync --force<br/>(full re-sync)"]
+    end
+
+    subgraph COMMANDS["Command Execution"]
+        CM1["Poll: GET /api/agent/commands<br/>?email=..."] --> CM2{"Command type?"}
+        CM2 -->|"revoke-token"| CM3["Delete credentials<br/>from config"]
+        CM2 -->|"force-sync"| CM4["Next cycle runs<br/>full sync (reset offsets)"]
+        CM2 -->|"update-config"| CM5["Merge payload<br/>into config.json"]
+        CM3 --> CM6["ACK: POST /api/agent/<br/>commands/:id/ack"]
+        CM4 --> CM6
+        CM5 --> CM6
+    end
+
+    SE6 --> SYNC
+    SY6 -.-> COMMANDS

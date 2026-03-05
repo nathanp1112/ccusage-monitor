@@ -1,0 +1,150 @@
+sequenceDiagram
+    actor Dev as Developer
+    participant JSONL as JSONL Files<br/>~/.claude/projects/
+    participant Agent as be-agent<br/>(Node.js CLI)
+    participant API as Lambda API<br/>(Hono Server)
+    participant S3 as S3 Bucket<br/>(ccusage-data)
+    participant Agg as Aggregator<br/>Lambda
+    participant Dash as Dashboard<br/>(Next.js SPA)
+
+    Note over Dev,JSONL: Developer uses Claude Code normally
+    Dev->>JSONL: Claude Code writes<br/>usage data to .jsonl files
+
+    Note over Agent: Triggered by launchd (macOS)<br/>or systemd (Linux) every N minutes
+
+    rect rgb(232, 245, 233)
+        Note over Agent: Phase 1: Collect Data
+        Agent->>Agent: loadConfig()<br/>Read ~/.ccusage-agent/config.json
+        Agent->>Agent: loadState()<br/>Get file_offsets with fingerprints
+
+        Agent->>JSONL: Scan ~/.claude/projects/*.jsonl<br/>~/.ccs/instances/*/projects/*
+        JSONL-->>Agent: File list with sizes
+
+        loop For each .jsonl file
+            Agent->>Agent: Check offset vs file size<br/>+ SHA-256 fingerprint
+            alt File unchanged (offset == size, fingerprint matches)
+                Agent->>Agent: Skip file
+            else File grew (offset < size, fingerprint matches)
+                Agent->>JSONL: Read from saved offset
+                JSONL-->>Agent: New lines only
+            else File reset (fingerprint changed)
+                Agent->>JSONL: Read from beginning
+                JSONL-->>Agent: All lines
+            end
+            Agent->>Agent: parseJSONLLine()<br/>Extract UsageEntry + PromptEntry
+        end
+
+        Agent->>Agent: discoverProjects()<br/>git remote get-url origin
+        Agent->>Agent: calculateEntryCosts()<br/>LiteLLM pricing (cached 24h)
+    end
+
+    rect rgb(227, 242, 253)
+        Note over Agent,API: Phase 2: Push to Server
+        loop Entries batched at 1000/request
+            Agent->>API: POST /api/sync<br/>{entries[], projects[], prompts[]}
+            alt 2xx Success
+                API-->>Agent: 200 OK {received, duplicates}
+            else 5xx Server Error
+                Agent->>Agent: Exponential backoff<br/>2^n x 1s, max 3 retries
+                Agent->>API: Retry POST /api/sync
+                API-->>Agent: 200 OK
+            else 4xx Client Error
+                API-->>Agent: 4xx Error
+                Agent->>Agent: Fail immediately
+            end
+        end
+
+        loop Prompts batched at 500/request
+            Agent->>API: POST /api/sync<br/>{prompts[]}
+            API-->>Agent: 200 OK
+        end
+
+        Agent->>Agent: saveState()<br/>Update file_offsets + fingerprints
+    end
+
+    rect rgb(187, 222, 251)
+        Note over API,S3: Phase 3: Lambda Processes Sync
+        API->>S3: Read members/index.json
+        S3-->>API: MemberRegistry
+
+        API->>API: Resolve member by email<br/>(create if new, ETag concurrency)
+
+        API->>S3: Read raw/{memberId}/{year}-{month}.json
+        S3-->>API: Existing raw data
+
+        API->>API: Dedup entries by request_id<br/>Merge new entries
+
+        API->>S3: Write raw/{memberId}/{year}-{month}.json
+        API->>S3: Compute + Write<br/>aggregated/{memberId}/{year}-{month}.json
+        API->>S3: Write projects/{memberId}.json
+        API->>S3: Write prompts/{memberId}/{year}-{month}.json
+        API->>S3: Write sync-logs/{year}-{month}/{memberId}.json
+        API->>S3: Update members/index.json<br/>(lastSyncAt, syncCount)
+    end
+
+    rect rgb(243, 229, 245)
+        Note over Agg: Phase 4: Aggregator (Hourly via EventBridge)
+        Agg->>S3: Read members/index.json
+        S3-->>Agg: Member list
+
+        loop For each member
+            Agg->>S3: Read aggregated/{memberId}/*.json
+            S3-->>Agg: Monthly aggregations
+        end
+
+        Agg->>Agg: Compute team-wide stats<br/>Model distribution, trends,<br/>rankings, comparisons
+
+        Agg->>S3: Write views/dashboard.json
+        Agg->>S3: Write views/members.json
+
+        loop For each member
+            Agg->>S3: Write views/members/{id}/{year}.json
+        end
+
+        Agg->>S3: Write meta/last-processed.json
+    end
+
+    rect rgb(232, 234, 246)
+        Note over Dash: Phase 5: Dashboard Renders
+        Dash->>API: GET /api/dashboard
+        API->>S3: Read views/dashboard.json
+        S3-->>API: Dashboard data
+        API-->>Dash: JSON response
+
+        Dash->>API: GET /api/members
+        API->>S3: Read views/members.json
+        S3-->>API: Members data
+        API-->>Dash: JSON response
+
+        Dash->>API: GET /api/members/:id?year=2026
+        API->>S3: Read views/members/{id}/2026.json
+        S3-->>API: Yearly detail
+        API-->>Dash: JSON response
+
+        Dash->>Dash: API Adapter transforms response
+        Dash->>Dash: Render Recharts visualizations
+    end
+
+    Note over Agent,API: Parallel: Command Polling
+    Agent->>API: GET /api/agent/commands?email=user@example.com
+    API->>S3: Read commands/{memberId}/queue.json
+    S3-->>API: Pending commands
+    API-->>Agent: Command list
+
+    alt Has pending commands
+        Agent->>Agent: Execute command<br/>(revoke-token, force-sync, update)
+        Agent->>API: POST /api/agent/commands/:id/ack
+        API->>S3: Update command status
+    end
+
+    Note over Agent,API: Parallel: Auto-Update Check
+    Agent->>API: GET /api/agent/version
+    API->>S3: Read releases/version.json
+    S3-->>API: Version manifest
+    API-->>Agent: {version, downloadUrl}
+
+    alt New version available
+        Agent->>S3: Download via presigned URL<br/>ccusage-agent-*.tgz
+        S3-->>Agent: Binary package
+        Agent->>Agent: npm install -g<br/>Re-run setup + sync --force
+    end

@@ -1,0 +1,108 @@
+flowchart LR
+    subgraph INTERNET["Internet"]
+        style INTERNET fill:#e3f2fd,stroke:#0d47a1,stroke-width:2px
+        AGENT["be-agent\n(Developer Machines)"]
+        BROWSER["Dashboard Users\n(Browsers)"]
+        ADMIN["Admin Users"]
+        style AGENT fill:#c8e6c9,stroke:#2e7d32
+        style BROWSER fill:#e8eaf6,stroke:#283593
+        style ADMIN fill:#fce4ec,stroke:#c62828
+    end
+
+    subgraph AWS["AWS Region: ap-southeast-1"]
+        style AWS fill:#fff8e1,stroke:#f57f17,stroke-width:3px
+
+        subgraph APIGW["API Gateway (HTTP API)"]
+            style APIGW fill:#ffe0b2,stroke:#ef6c00,stroke-width:2px
+            GW["REST Endpoint\nhttps://5kvqadz4mc\n.execute-api\n.ap-southeast-1\n.amazonaws.com"]
+            style GW fill:#ffcc80,stroke:#f57c00
+        end
+
+        subgraph COMPUTE["Compute"]
+            style COMPUTE fill:#bbdefb,stroke:#1565c0,stroke-width:2px
+
+            APILAMBDA["Lambda: API Handler\nRuntime: Node.js 20\nMemory: 512 MB\nTimeout: 29s\nHandler: lambda.handler"]
+            style APILAMBDA fill:#90caf9,stroke:#1976d2
+
+            AGGLAMBDA["Lambda: Aggregator\nRuntime: Node.js 20\nMemory: 1024 MB\nTimeout: 300s\nHandler: aggregator.handler"]
+            style AGGLAMBDA fill:#90caf9,stroke:#1976d2
+        end
+
+        subgraph SCHEDULING["Scheduling"]
+            style SCHEDULING fill:#f3e5f5,stroke:#6a1b9a,stroke-width:2px
+            EB["EventBridge Rule\nSchedule: rate(1 hour)\nTarget: Aggregator Lambda"]
+            style EB fill:#e1bee7,stroke:#7b1fa2
+        end
+
+        subgraph STORAGE["Storage"]
+            style STORAGE fill:#fff3e0,stroke:#e65100,stroke-width:2px
+
+            subgraph S3DATA["S3: ccusage-data-dev / ccusage-data-jit"]
+                style S3DATA fill:#ffe0b2,stroke:#ef6c00,stroke-width:2px
+                RAW["raw/\nSource of truth"]
+                AGGDATA["aggregated/\nMonthly summaries"]
+                VIEWDATA["views/\nDashboard JSON"]
+                META["members/, projects/,\nprompts/, sync-logs/,\ncommands/, releases/"]
+                ENCRYPT["Encryption: SSE-KMS\nVersioning: Enabled\nLifecycle: sync-logs 90d"]
+                style RAW fill:#ffcc80,stroke:#f57c00
+                style AGGDATA fill:#ffcc80,stroke:#f57c00
+                style VIEWDATA fill:#ffcc80,stroke:#f57c00
+                style META fill:#ffcc80,stroke:#f57c00
+                style ENCRYPT fill:#fff9c4,stroke:#f9a825
+            end
+
+            S3DASH["S3: cc-usage-monitor-tvf\nStatic Website Hosting\nNext.js 15 SPA"]
+            style S3DASH fill:#ffe0b2,stroke:#ef6c00
+        end
+
+        subgraph CDN["Content Delivery"]
+            style CDN fill:#e8eaf6,stroke:#283593,stroke-width:2px
+            CF["CloudFront Distribution\nID: E1W8WZ55TBZY1P\nOrigin: S3 Dashboard Bucket\nHTTPS Only"]
+            style CF fill:#c5cae9,stroke:#3949ab
+        end
+
+        subgraph IAM["IAM"]
+            style IAM fill:#fce4ec,stroke:#c62828,stroke-width:2px
+            ROLE["Lambda Execution Role\nPermissions:\n- s3:GetObject\n- s3:PutObject\n- s3:DeleteObject\n- s3:ListBucket\n- kms:Decrypt\n- kms:GenerateDataKey\n- lambda:InvokeFunction"]
+            style ROLE fill:#f8bbd0,stroke:#d32f2f
+        end
+
+        subgraph MONITORING["CloudWatch"]
+            style MONITORING fill:#e0f2f1,stroke:#00695c,stroke-width:2px
+            ALARM1["Alarm: API Errors\nThreshold: >5 / 5min"]
+            ALARM2["Alarm: Aggregator Errors\nThreshold: >1"]
+            ALARM3["Alarm: 5xx Responses\nThreshold: >10 / 5min"]
+            style ALARM1 fill:#b2dfdb,stroke:#00897b
+            style ALARM2 fill:#b2dfdb,stroke:#00897b
+            style ALARM3 fill:#b2dfdb,stroke:#00897b
+        end
+
+        subgraph STAGES["Deployment Stages"]
+            style STAGES fill:#f1f8e9,stroke:#33691e,stroke-width:2px
+            DEV["Stage: dev\nDevelopment"]
+            JIT["Stage: jit\nProduction"]
+            style DEV fill:#dcedc8,stroke:#558b2f
+            style JIT fill:#dcedc8,stroke:#558b2f
+        end
+    end
+
+    AGENT -->|"POST /api/sync\nGET /api/agent/*"| GW
+    ADMIN -->|"POST /api/admin/*"| GW
+    BROWSER -->|"HTTPS"| CF
+
+    GW -->|"Invoke"| APILAMBDA
+    EB -->|"Invoke hourly"| AGGLAMBDA
+
+    APILAMBDA -->|"Read/Write"| S3DATA
+    AGGLAMBDA -->|"Read aggregated/\nWrite views/"| S3DATA
+
+    CF -->|"Origin"| S3DASH
+
+    ROLE -.->|"Attached to"| APILAMBDA
+    ROLE -.->|"Attached to"| AGGLAMBDA
+
+    APILAMBDA -.->|"Metrics"| MONITORING
+    AGGLAMBDA -.->|"Metrics"| MONITORING
+
+    DEV -.->|"Separate resources"| S3DATA
+    JIT -.->|"Separate resources"| S3DATA

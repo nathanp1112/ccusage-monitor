@@ -1,0 +1,146 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+# ============================================================
+# DEVELOPER MACHINE
+# ============================================================
+
+dev: Developer Machine {
+  style.fill: "#f0f4f8"
+  style.stroke: "#64748b"
+  style.stroke-width: 2
+  style.font-color: "#334155"
+
+  logs: JSONL Logs {
+    shape: page
+    style.fill: "#e2e8f0"
+    style.stroke: "#94a3b8"
+    style.font-color: "#334155"
+    label: "JSONL Logs\n~/.claude/projects/\n~/.ccs/instances/"
+  }
+
+  agent: be-agent v0.5.1 {
+    style.fill: "#1e40af"
+    style.font-color: "#ffffff"
+    style.stroke: "#1e3a8a"
+    style.stroke-width: 2
+    label: "be-agent v0.5.1\n(Node.js CLI)"
+  }
+
+  logs -> agent: "parse"
+}
+
+# ============================================================
+# AWS (ap-southeast-1)
+# ============================================================
+
+aws: AWS  ap-southeast-1  {
+  style.fill: "#fff8f0"
+  style.stroke: "#ff9900"
+  style.stroke-width: 2
+  style.font-color: "#92400e"
+
+  lambda: Lambda API {
+    style.fill: "#ff9900"
+    style.font-color: "#ffffff"
+    style.stroke: "#b45309"
+    style.stroke-width: 2
+    label: "Lambda API\n(Hono)"
+  }
+
+  aggregator: Aggregator Lambda {
+    style.fill: "#f59e0b"
+    style.font-color: "#ffffff"
+    style.stroke: "#b45309"
+    label: "Aggregator Lambda\n(hourly / on-demand)"
+  }
+
+  s3: S3 Bucket {
+    style.fill: "#ecfdf5"
+    style.stroke: "#2e8b57"
+    style.stroke-width: 2
+    style.font-color: "#14532d"
+
+    raw: raw/ {
+      shape: cylinder
+      style.fill: "#bbf7d0"
+      style.stroke: "#16a34a"
+      style.font-color: "#14532d"
+      label: "raw/\n(source of truth)"
+    }
+
+    aggregated: aggregated/ {
+      shape: cylinder
+      style.fill: "#86efac"
+      style.stroke: "#15803d"
+      style.font-color: "#14532d"
+      label: "aggregated/\n(monthly summaries)"
+    }
+
+    views: views/ {
+      shape: cylinder
+      style.fill: "#4ade80"
+      style.stroke: "#166534"
+      style.font-color: "#14532d"
+      label: "views/\n(dashboard-ready JSON)"
+    }
+  }
+
+  lambda -> s3.raw: "write entries" {
+    style.stroke: "#2e8b57"
+  }
+
+  lambda -> s3.aggregated: "incremental update" {
+    style.stroke: "#2e8b57"
+  }
+
+  aggregator -> s3.aggregated: "read" {
+    style.stroke: "#ff9900"
+    style.stroke-dash: 4
+  }
+
+  aggregator -> s3.views: "write" {
+    style.stroke: "#ff9900"
+  }
+
+  lambda -> s3.views: "serve" {
+    style.stroke: "#999999"
+    style.stroke-dash: 3
+  }
+}
+
+# ============================================================
+# DASHBOARD (CloudFront + S3)
+# ============================================================
+
+dashboard: Dashboard {
+  style.fill: "#eff6ff"
+  style.stroke: "#3b82f6"
+  style.stroke-width: 2
+  style.font-color: "#1e3a8a"
+  label: "Dashboard\n(Next.js SPA)\nS3 + CloudFront"
+}
+
+# ============================================================
+# CONNECTIONS
+# ============================================================
+
+dev.agent -> aws.lambda: "POST /api/sync\n(entries, prompts, projects)" {
+  style.stroke: "#1e40af"
+  style.stroke-width: 2
+}
+
+aws.lambda -> dev.agent: "GET /api/agent/commands\n(remote control)" {
+  style.stroke: "#7c3aed"
+  style.stroke-dash: 4
+}
+
+dashboard -> aws.lambda: "GET /api/*\n(dashboard, members)" {
+  style.stroke: "#3b82f6"
+  style.stroke-width: 2
+}

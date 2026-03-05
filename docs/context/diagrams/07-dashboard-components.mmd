@@ -1,0 +1,77 @@
+flowchart TD
+    subgraph APP["App Layout"]
+        ROOT["Root Layout<br/>(globals.css, fonts)"] --> PROVIDERS["Providers<br/>(QueryClientProvider +<br/>ThemeProvider)"]
+        PROVIDERS --> ROUTES{"Route Groups"}
+    end
+
+    subgraph AUTH_GROUP["(auth) Group"]
+        LOGIN["Login Page<br/>Zod validation<br/>(email + password)"]
+    end
+
+    subgraph DASH_GROUP["(dashboard) Group"]
+        GUARD["AuthGuard<br/>Check hasTokens()<br/>Redirect to /login"]
+        GUARD --> SHELL["Sidebar + Navbar"]
+        SHELL --> PAGES{"Pages"}
+    end
+
+    ROUTES -->|"/login"| AUTH_GROUP
+    ROUTES -->|"/*"| DASH_GROUP
+
+    subgraph PAGE_DASH["/ Dashboard Page"]
+        PD1["StatsGrid<br/>(4 summary cards)"]
+        PD2["DashboardCharts"]
+        PD2 --> PD2a["UsageTrendChart<br/>(area chart)"]
+        PD2 --> PD2b["Toggle View"]
+        PD2b --> PD2c["CostTreemap"]
+        PD2b --> PD2d["ModelDistributionChart<br/>(pie chart)"]
+    end
+
+    subgraph PAGE_MEMBERS["/members Members Page"]
+        PM1["StatsBar<br/>(total members, active, cost)"]
+        PM2["ViewToggle + SortSelector"]
+        PM2 --> PM3["MemberRankingList<br/>(ranked table)"]
+        PM2 --> PM4["MemberCard Grid<br/>(card layout)"]
+        PM2 --> PM5["CostTreemap<br/>(visual comparison)"]
+        PM3 --> PM6["DataSheet Modal"]
+        PM4 --> PM6
+        PM6 --> PM7["MemberDetailContent"]
+        PM7 --> PM8["MemberDetailCharts<br/>(DailyModelUsageChart +<br/>UsageHeatMap +<br/>ModelDistributionChart)"]
+    end
+
+    subgraph PAGE_REPORTS["/reports Reports Page"]
+        PR1["ReportCards<br/>(placeholder)"]
+    end
+
+    subgraph PAGE_PLAY["/playground Playground"]
+        PP1["Three.js<br/>Visualizations"]
+    end
+
+    PAGES --> PAGE_DASH
+    PAGES --> PAGE_MEMBERS
+    PAGES --> PAGE_REPORTS
+    PAGES --> PAGE_PLAY
+
+    subgraph STATE["State Management"]
+        subgraph TANSTACK["TanStack Query<br/>(Server State)"]
+            TQ1["useDashboard()"]
+            TQ2["useMembers()"]
+            TQ3["useAuth()"]
+            TQ4["5 min stale time"]
+        end
+        subgraph ZUSTAND["Zustand<br/>(UI State)"]
+            ZU1["Sidebar open/closed"]
+            ZU2["Date range selection"]
+            ZU3["localStorage persistence"]
+        end
+    end
+
+    subgraph API["API Integration"]
+        AC["ApiClient<br/>(Axios instance)"] --> AC1["Bearer token<br/>auto-attach"]
+        AC1 --> AC2["401 auto-refresh<br/>(retry with new token)"]
+        AC2 --> AC3["Adapter Layer<br/>(Lambda vs Legacy format)"]
+    end
+
+    TANSTACK --> API
+    PAGE_DASH -.-> TANSTACK
+    PAGE_MEMBERS -.-> TANSTACK
+    DASH_GROUP -.-> ZUSTAND
