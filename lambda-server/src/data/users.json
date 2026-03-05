@@ -1,24 +1,24 @@
 [
   {
-    "email": "nghia@jitera.com",
+    "email": "nghia@techvify.com",
     "passwordHash": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
     "name": "Admin",
     "role": "admin"
   },
   {
-    "email": "nghiapham@jitera.com",
+    "email": "nghiapham@techvify.com",
     "passwordHash": "240be518fabd2724ddb6f04eeb1da5967448d7e831c08c8fa822809f74c720a9",
     "name": "Nghia Duong",
     "role": "admin"
   },
   {
-    "email": "user@jitera.com",
+    "email": "user@techvify.com",
     "passwordHash": "f44d1ac9bf0c69b083380b86dbdf3b73797150e3cca4820ac399f7917e607647",
     "name": "Agent",
     "role": "agent"
   },
   {
-    "email": "member@jitera.com",
+    "email": "member@techvify.com",
     "passwordHash": "5600376e863d2f57a053518f324ad3840b0bc2348b573af281a7b7cbe7a228c6",
     "name": "Member",
     "role": "member"

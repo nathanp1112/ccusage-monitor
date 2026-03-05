@@ -183,10 +183,10 @@ JWT-based. Accounts stored in `lambda-server/src/data/users.json` (SHA-256 hashe
 
 | Email | Role |
 |-------|------|
-| `nghia@jitera.com` | admin |
-| `nghiapham@jitera.com` | admin |
-| `user@jitera.com` | agent |
-| `member@jitera.com` | member |
+| `nghia@techvify.com` | admin |
+| `nghiapham@techvify.com` | admin |
+| `user@techvify.com` | agent |
+| `member@techvify.com` | member |
 
 ---
 
