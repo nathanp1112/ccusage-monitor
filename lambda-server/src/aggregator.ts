@@ -528,6 +528,17 @@ function generateMemberYearlyView(memberData: MemberAggregatedData): MemberYearl
         percentage: monthAgg.totals.costUsd > 0 ? (stats.costUsd / monthAgg.totals.costUsd) * 100 : 0,
       }));
 
+    // Extension breakdown for this month
+    const totalOps = Object.values(monthAgg.extensionBreakdown)
+      .reduce((sum, v) => sum + v.operationCount, 0);
+    const extensionBreakdown = Object.entries(monthAgg.extensionBreakdown)
+      .sort((a, b) => b[1].operationCount - a[1].operationCount)
+      .map(([language, stats]) => ({
+        language,
+        operationCount: stats.operationCount,
+        percentage: totalOps > 0 ? (stats.operationCount / totalOps) * 100 : 0,
+      }));
+
     months[monthKey] = {
       totals: {
         costUsd: monthAgg.totals.costUsd,
@@ -539,6 +550,7 @@ function generateMemberYearlyView(memberData: MemberAggregatedData): MemberYearl
       dailyModelUsage: monthAgg.dailyModelUsage,
       modelBreakdown,
       projectBreakdown,
+      extensionBreakdown,
     };
   }
 

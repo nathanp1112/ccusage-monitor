@@ -19,6 +19,7 @@ export interface UsageEntry {
   cacheReadTokens: number;
   costUsd: number;
   claudeVersion: string | null;
+  fileExtensions?: Record<string, number>; // ext → operation count
 }
 
 export interface ModelStats {
@@ -120,6 +121,7 @@ export interface SyncRequestEntry {
   cache_read_tokens?: number;
   cost_usd: number;
   claude_version?: string | null;
+  file_extensions?: Record<string, number>; // ext → operation count
 }
 
 export interface SyncRequestProject {
@@ -266,6 +268,11 @@ export interface MonthlyData {
     costUsd: number;
     percentage: number;
     requestCount: number;
+  }>;
+  extensionBreakdown: Array<{
+    language: string;
+    operationCount: number;
+    percentage: number;
   }>;
 }
 
@@ -426,4 +433,5 @@ export interface MonthAggregation {
   dailyModelUsage: DailyModelUsage[];
   modelBreakdown: Record<string, ModelBreakdown>;
   projectBreakdown: Record<string, { costUsd: number; requestCount: number }>;
+  extensionBreakdown: Record<string, { operationCount: number }>;
 }

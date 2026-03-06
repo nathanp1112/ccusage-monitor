@@ -97,6 +97,7 @@ async function pushBatch(
       cache_read_tokens: e.usage.cache_read_input_tokens,
       cost_usd: e.cost_usd,
       claude_version: e.version,
+      file_extensions: e.file_extensions,
     })),
     projects: projects.map((p) => ({
       path: p.path,

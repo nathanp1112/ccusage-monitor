@@ -57,6 +57,7 @@ export interface UsageEntry {
   };
   cost_usd: number;
   version: string | null;
+  file_extensions?: Record<string, number>; // ext → operation count, e.g. { ts: 3, json: 1 }
 }
 
 /**
@@ -173,6 +174,25 @@ function parseJSONLLine(
     // Extract usage
     const usage = data.message.usage;
 
+    // Extract file operation counts from tool_use blocks in message content
+    const file_extensions: Record<string, number> = {};
+    const FILE_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'Glob']);
+    if (Array.isArray(data.message.content)) {
+      for (const block of data.message.content as Array<{
+        type?: string;
+        name?: string;
+        input?: Record<string, unknown>;
+      }>) {
+        if (block.type === 'tool_use' && FILE_TOOLS.has(block.name ?? '')) {
+          const filePath = block.input?.file_path as string | undefined;
+          if (filePath) {
+            const ext = filePath.split('.').pop()?.toLowerCase() ?? '';
+            if (ext) file_extensions[ext] = (file_extensions[ext] ?? 0) + 1;
+          }
+        }
+      }
+    }
+
     return {
       request_id: requestId,
       timestamp: data.timestamp,
@@ -187,6 +207,7 @@ function parseJSONLLine(
       },
       cost_usd: data.costUSD || 0,
       version: data.version || null,
+      file_extensions: Object.keys(file_extensions).length > 0 ? file_extensions : undefined,
     };
   } catch {
     return null;

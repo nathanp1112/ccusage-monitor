@@ -13,6 +13,28 @@ import type {
   ModelBreakdown,
 } from './types.js';
 
+/**
+ * Map a raw file extension to a language group label.
+ */
+function toLanguageGroup(ext: string): string {
+  const e = ext.toLowerCase().replace(/^\./, '');
+  if (['ts', 'tsx', 'js', 'jsx', 'mjs', 'cjs'].includes(e)) return 'TypeScript/JS';
+  if (['py', 'pyw'].includes(e))                              return 'Python';
+  if (e === 'java')                                           return 'Java';
+  if (e === 'go')                                             return 'Go';
+  if (e === 'rs')                                             return 'Rust';
+  if (['c', 'cpp', 'cc', 'h', 'hpp'].includes(e))            return 'C/C++';
+  if (e === 'cs')                                             return 'C#';
+  if (['rb', 'rake'].includes(e))                             return 'Ruby';
+  if (e === 'php')                                            return 'PHP';
+  if (['json', 'yaml', 'yml', 'toml', 'env', 'lock'].includes(e)) return 'Config';
+  if (['md', 'mdx', 'txt', 'rst'].includes(e))               return 'Docs/Markdown';
+  if (['sh', 'bash', 'zsh', 'fish'].includes(e))             return 'Shell';
+  if (['html', 'htm', 'css', 'scss', 'sass', 'less'].includes(e)) return 'HTML/CSS';
+  if (e === 'sql')                                            return 'SQL';
+  return 'Other';
+}
+
 export function createEmptyMonthAggregation(year: number, month: number): MonthAggregation {
   return {
     year,
@@ -29,6 +51,7 @@ export function createEmptyMonthAggregation(year: number, month: number): MonthA
     dailyModelUsage: [],
     modelBreakdown: {},
     projectBreakdown: {},
+    extensionBreakdown: {},
   };
 }
 
@@ -101,6 +124,21 @@ export function aggregateMonthData(rawData: RawMonthlyData | null, year: number,
       }
       result.projectBreakdown[project].costUsd = addCost(result.projectBreakdown[project].costUsd, entry.costUsd);
       result.projectBreakdown[project].requestCount += 1;
+    }
+
+    // Aggregate extension breakdown
+    for (const entry of dailyRecord.entries) {
+      if (!entry.fileExtensions || Object.keys(entry.fileExtensions).length === 0) {
+        // No file tools used → conversation/just-asking
+        result.extensionBreakdown['Conversation'] ??= { operationCount: 0 };
+        result.extensionBreakdown['Conversation'].operationCount += 1;
+      } else {
+        for (const [ext, count] of Object.entries(entry.fileExtensions)) {
+          const lang = toLanguageGroup(ext);
+          result.extensionBreakdown[lang] ??= { operationCount: 0 };
+          result.extensionBreakdown[lang].operationCount += count;
+        }
+      }
     }
   }
 

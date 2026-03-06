@@ -56,6 +56,7 @@ const syncEntrySchema = z.object({
   cache_read_tokens: z.number().int().min(0).optional().default(0),
   cost_usd: z.number().min(0),
   claude_version: z.string().nullable().optional(),
+  file_extensions: z.record(z.string(), z.number().int().min(0)).optional(),
 });
 
 const syncProjectSchema = z.object({
@@ -121,6 +122,7 @@ function toUsageEntry(entry: SyncRequestEntry): UsageEntry {
     cacheReadTokens: entry.cache_read_tokens ?? 0,
     costUsd: entry.cost_usd,
     claudeVersion: entry.claude_version ?? null,
+    fileExtensions: entry.file_extensions,
   };
 }
 

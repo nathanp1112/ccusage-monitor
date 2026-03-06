@@ -10,6 +10,7 @@ import { ModelDistributionChart } from '@/components/charts/model-distribution-c
 import { DailyModelUsageChart, type DailyModelData } from '@/components/charts/daily-model-usage-chart'
 import { UsageHeatMap, type DailyUsageData } from '@/components/charts/usage-heat-map'
 import { ProjectActivityChart, type ProjectActivityData } from '@/components/charts/project-activity-chart'
+import { FileExtensionChart, type FileExtensionData } from '@/components/charts/file-extension-chart'
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import { formatCurrency, formatTokens } from '@/lib/utils'
 import { apiClient } from '@/lib/api-client'
@@ -53,6 +54,11 @@ interface MonthlyData {
     project: string
     costUsd: number
     requestCount: number
+    percentage: number
+  }>
+  extensionBreakdown?: Array<{
+    language: string
+    operationCount: number
     percentage: number
   }>
 }
@@ -228,6 +234,11 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
     }))
   }, [currentMonthData?.projectBreakdown])
 
+  // File extension activity data for selected month
+  const extensionActivityData = useMemo((): FileExtensionData[] => {
+    return currentMonthData?.extensionBreakdown ?? []
+  }, [currentMonthData?.extensionBreakdown])
+
   // Prompt count for selected month
   const promptCount = useMemo(() => {
     const monthKey = String(selectedMonth + 1)
@@ -370,6 +381,14 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
         <ProjectActivityChart
           data={projectActivityData}
           title={`Project Activity - ${monthName}`}
+        />
+      )}
+
+      {/* File Activity by Language — admin only */}
+      {isAdmin && extensionActivityData.length > 0 && (
+        <FileExtensionChart
+          data={extensionActivityData}
+          title={`File Activity by Language - ${monthName}`}
         />
       )}
     </div>
