@@ -6,7 +6,7 @@ import { loadConfig } from '../lib/config.js';
 import { request } from 'undici';
 
 // Read version from package.json at build time (inlined by bundler)
-const CURRENT_VERSION = '0.5.1';
+const CURRENT_VERSION = '0.5.2';
 
 interface VersionResponse {
   success: boolean;
