@@ -384,8 +384,8 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
         />
       )}
 
-      {/* File Activity by Language — admin only */}
-      {isAdmin && extensionActivityData.length > 0 && (
+      {/* File Activity by Language — visible to all */}
+      {extensionActivityData.length > 0 && (
         <FileExtensionChart
           data={extensionActivityData}
           title={`File Activity by Language - ${monthName}`}
