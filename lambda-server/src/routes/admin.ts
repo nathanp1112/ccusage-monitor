@@ -10,8 +10,12 @@ import { LambdaClient, InvokeCommand } from '@aws-sdk/client-lambda';
 import {
   getJsonFromS3,
   putJsonToS3,
+  deleteObjectFromS3,
   getCommandQueueKey,
   getMemberRegistryKey,
+  getRawDataKey,
+  getAggregatedDataKey,
+  getMemberDetailViewKey,
 } from '../lib/s3.js';
 import type {
   MemberRegistry,
@@ -229,6 +233,55 @@ adminRoute.get('/commands/:memberId', async (c) => {
     success: true,
     memberId,
     commands: queue.commands,
+  });
+});
+
+/**
+ * DELETE /api/admin/month/current
+ * Hard-deletes raw + aggregated S3 data for the current month for ALL members.
+ * Also removes the cached view for each member so the next aggregation starts clean.
+ * After deletion, use POST /api/admin/aggregate?force=true to rebuild views.
+ */
+adminRoute.delete('/month/current', async (c) => {
+  const now = new Date();
+  const year = now.getUTCFullYear();
+  const month = now.getUTCMonth() + 1; // 1-indexed
+
+  const registry = await getJsonFromS3<MemberRegistry>(getMemberRegistryKey());
+  if (!registry) {
+    return c.json({ success: false, error: 'No members registered' }, 404);
+  }
+
+  const memberIds = Object.keys(registry.members);
+  const deleted: string[] = [];
+  const errors: string[] = [];
+
+  await Promise.all(
+    memberIds.map(async (memberId) => {
+      const keys = [
+        getRawDataKey(memberId, year, month),
+        getAggregatedDataKey(memberId, year, month),
+        getMemberDetailViewKey(memberId, year),
+      ];
+      for (const key of keys) {
+        try {
+          await deleteObjectFromS3(key);
+          deleted.push(key);
+        } catch (err) {
+          errors.push(`${key}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    })
+  );
+
+  return c.json({
+    success: true,
+    year,
+    month,
+    membersProcessed: memberIds.length,
+    keysDeleted: deleted.length,
+    errors: errors.length > 0 ? errors : undefined,
+    note: 'Run POST /api/admin/aggregate?force=true to rebuild views.',
   });
 });
 

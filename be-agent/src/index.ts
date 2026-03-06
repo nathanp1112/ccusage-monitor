@@ -43,12 +43,14 @@ program
   .option('-d, --dry-run', 'Show what would be synced without pushing')
   .option('-v, --verbose', 'Show detailed progress output')
   .option('--no-prompts', 'Skip syncing prompt text (entries only)')
+  .option('--current-month', 'Re-parse all files but only push entries from current month (use after deleting current-month S3 data)')
   .action(async (options) => {
     await pushCommand({
       force: options.force,
       dryRun: options.dryRun,
       noPrompts: options.prompts === false,
       verbose: options.verbose,
+      currentMonth: options.currentMonth,
     });
   });
 

@@ -10,6 +10,7 @@ export async function pushCommand(options: {
   dryRun?: boolean;
   noPrompts?: boolean;
   verbose?: boolean;
+  currentMonth?: boolean;
 }): Promise<void> {
   const verbose = options.verbose ?? false;
 
@@ -25,6 +26,12 @@ export async function pushCommand(options: {
   // Force mode - reset file offsets to re-read all files from scratch
   if (options.force) {
     if (verbose) console.log('Force mode: collecting all historical data...\n');
+    state = { ...state, file_offsets: {} };
+  }
+
+  // Current-month mode - re-read all files but only push entries from current month
+  if (options.currentMonth) {
+    if (verbose) console.log('Current-month mode: re-parsing all files, filtering to current month only...\n');
     state = { ...state, file_offsets: {} };
   }
 
@@ -61,6 +68,23 @@ export async function pushCommand(options: {
     if (result.errors.length > 5) {
       console.error(`  ... and ${result.errors.length - 5} more`);
     }
+  }
+
+  // Current-month mode: keep only entries whose timestamp falls in the current year/month
+  if (options.currentMonth) {
+    const now = new Date();
+    const curYear = now.getFullYear();
+    const curMonth = now.getMonth() + 1; // 1-indexed
+    const before = result.entries.length;
+    result.entries = result.entries.filter((e) => {
+      const d = new Date(e.timestamp);
+      return d.getFullYear() === curYear && d.getMonth() + 1 === curMonth;
+    });
+    if (verbose) {
+      console.log(`Current-month filter: kept ${result.entries.length}/${before} entries for ${curYear}-${String(curMonth).padStart(2, '0')}`);
+    }
+    // Don't re-sync prompts that may span prior months — skip them in this mode
+    result.prompts = [];
   }
 
   if (verbose) {

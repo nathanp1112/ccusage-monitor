@@ -9,6 +9,7 @@ import {
   PutObjectCommand,
   HeadObjectCommand,
   ListObjectsV2Command,
+  DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -405,6 +406,17 @@ export async function getPresignedDownloadUrl(key: string, expiresIn: number = 6
     Key: key,
   });
   return getSignedUrl(s3Client, command, { expiresIn });
+}
+
+/**
+ * Delete an object from S3. No-op if key does not exist.
+ */
+export async function deleteObjectFromS3(key: string): Promise<void> {
+  const command = new DeleteObjectCommand({
+    Bucket: BUCKET_NAME,
+    Key: key,
+  });
+  await s3Client.send(command);
 }
 
 export { s3Client, BUCKET_NAME };
