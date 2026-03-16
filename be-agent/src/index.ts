@@ -13,7 +13,7 @@ const program = new Command();
 program
   .name('ccusage-agent')
   .description('CCUsage Agent - Sync Claude Code usage data to team server')
-  .version('0.5.2');
+  .version('0.5.3');
 
 // Setup - full installation with auto-start
 program

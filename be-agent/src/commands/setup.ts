@@ -6,9 +6,9 @@ import { request } from 'undici';
 import {
   saveConfig,
   loadConfig,
+  upsertTarget,
   discoverClaudePaths,
   AGENT_CONFIG_DIR,
-  DEFAULT_CONFIG,
 } from '../lib/config.js';
 
 const LAUNCHD_LABEL = 'com.ccusage.agent';
@@ -41,13 +41,11 @@ function getAgentExecutable(): string {
 
   // If running via tsx (development), convert to dist path
   if (scriptPath.endsWith('.ts')) {
-    // Convert src/index.ts -> dist/index.js
     return scriptPath
       .replace('/src/', '/dist/')
       .replace('.ts', '.js');
   }
 
-  // If already running the built file or global install
   return scriptPath;
 }
 
@@ -132,23 +130,18 @@ WantedBy=timers.target
 function installLaunchdService(intervalMinutes: number): void {
   const plistContent = createLaunchdPlist(intervalMinutes);
 
-  // Ensure LaunchAgents directory exists
   const launchAgentsDir = join(homedir(), 'Library', 'LaunchAgents');
   if (!existsSync(launchAgentsDir)) {
     mkdirSync(launchAgentsDir, { recursive: true });
   }
 
-  // Unload existing service if present
   try {
     execSync(`launchctl unload ${LAUNCHD_PLIST_PATH} 2>/dev/null`, { stdio: 'ignore' });
   } catch {
     // Ignore if not loaded
   }
 
-  // Write plist file
   writeFileSync(LAUNCHD_PLIST_PATH, plistContent);
-
-  // Load the service
   execSync(`launchctl load ${LAUNCHD_PLIST_PATH}`);
 
   console.log(`  ✓ Installed launchd service: ${LAUNCHD_LABEL}`);
@@ -162,17 +155,14 @@ function installSystemdService(intervalMinutes: number): void {
   const serviceContent = createSystemdService(intervalMinutes);
   const timerContent = createSystemdTimer(intervalMinutes);
 
-  // Ensure systemd user directory exists
   const systemdDir = join(homedir(), '.config', 'systemd', 'user');
   if (!existsSync(systemdDir)) {
     mkdirSync(systemdDir, { recursive: true });
   }
 
-  // Write service and timer files
   writeFileSync(SYSTEMD_SERVICE_PATH, serviceContent);
   writeFileSync(SYSTEMD_SERVICE_PATH.replace('.service', '.timer'), timerContent);
 
-  // Reload systemd and enable timer
   try {
     execSync('systemctl --user daemon-reload');
     execSync('systemctl --user enable ccusage-agent.timer');
@@ -186,7 +176,7 @@ function installSystemdService(intervalMinutes: number): void {
 }
 
 /**
- * Setup command - full installation
+ * Setup command - add/update a target and install auto-start service
  */
 export async function setupCommand(options: SetupOptions): Promise<void> {
   const intervalMinutes = options.interval || 60;
@@ -200,17 +190,23 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
   console.log(`  Platform: ${os}`);
   console.log('');
 
-  // 1. Save configuration
+  // 1. Add/update target in config
   console.log('Step 1: Saving configuration...');
-  const existingConfig = loadConfig();
-  const config = {
-    ...DEFAULT_CONFIG,
+  const runtimeConfig = loadConfig();
+  const target = {
     server_url: options.serverUrl,
     email: options.email,
-    sync_interval_minutes: intervalMinutes,
+    password: runtimeConfig.targets.find(
+      (t) => t.server_url === options.serverUrl && t.email === options.email
+    )?.password,
   };
+  const config = { ...upsertTarget(runtimeConfig, target), sync_interval_minutes: intervalMinutes };
   saveConfig(config);
   console.log(`  ✓ Config saved to: ${AGENT_CONFIG_DIR}/config.json`);
+  console.log(`  ✓ Targets: ${config.targets.length}`);
+  for (const t of config.targets) {
+    console.log(`    - ${t.email} → ${t.server_url}`);
+  }
 
   // 2. Show discovered paths
   console.log('\nStep 2: Discovering Claude data paths...');
@@ -259,6 +255,7 @@ export async function setupCommand(options: SetupOptions): Promise<void> {
   console.log('Setup complete!\n');
   console.log('The agent will:');
   console.log(`  • Sync every ${intervalMinutes} minutes automatically`);
+  console.log(`  • Push to ${config.targets.length} server target(s)`);
   console.log('  • Start automatically when you log in');
   console.log('');
   console.log('Commands:');

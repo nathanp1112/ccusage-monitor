@@ -3,6 +3,8 @@ import {
   loadConfig,
   loadState,
   isConfigured,
+  targetId,
+  getTargetState,
   CONFIG_FILE,
   STATE_FILE,
   PID_FILE,
@@ -19,9 +21,8 @@ function isDaemonRunning(): { running: boolean; pid: number | null } {
   try {
     const pid = parseInt(readFileSync(PID_FILE, 'utf-8').trim(), 10);
 
-    // Check if process is running
     try {
-      process.kill(pid, 0); // Signal 0 just checks if process exists
+      process.kill(pid, 0);
       return { running: true, pid };
     } catch {
       return { running: false, pid };
@@ -67,10 +68,31 @@ export async function statusCommand(): Promise<void> {
   }
 
   const config = loadConfig();
-  console.log(`  Server URL: ${config.server_url}`);
-  console.log(`  Email: ${config.email}`);
-  console.log(`  Password: ${config.password ? 'configured' : 'not set'}`);
   console.log(`  Sync interval: ${config.sync_interval_minutes} minutes`);
+
+  // Targets
+  console.log(`\nTargets (${config.targets.length}):`);
+  const state = loadState();
+
+  for (const target of config.targets) {
+    const tid = targetId(target);
+    const ts = getTargetState(state, tid);
+
+    console.log(`\n  [${target.email}]`);
+    console.log(`    Server: ${target.server_url}`);
+    console.log(`    Password: ${target.password ? 'configured' : 'not set'}`);
+
+    if (ts.last_sync_timestamp) {
+      console.log(`    Last sync: ${ts.last_sync_timestamp}`);
+      console.log(`               (${formatRelativeTime(ts.last_sync_timestamp)})`);
+      console.log(`    Last sync records: ${ts.last_sync_records}`);
+    } else {
+      console.log('    Last sync: never');
+    }
+
+    console.log(`    Total synced records: ${ts.total_synced_records}`);
+    console.log(`    Auth token: ${ts.access_token ? 'stored' : 'none'}`);
+  }
 
   // Daemon status
   console.log('\nDaemon:');
@@ -83,23 +105,10 @@ export async function statusCommand(): Promise<void> {
     console.log('  Status: STOPPED');
   }
 
-  // Sync status
-  console.log('\nSync Status:');
+  // Shared state
+  console.log('\nShared State:');
   console.log(`  State file: ${STATE_FILE}`);
-
-  const state = loadState();
-
-  if (state.last_sync_timestamp) {
-    console.log(`  Last sync: ${state.last_sync_timestamp}`);
-    console.log(`             (${formatRelativeTime(state.last_sync_timestamp)})`);
-    console.log(`  Last sync records: ${state.last_sync_records}`);
-  } else {
-    console.log('  Last sync: never');
-  }
-
-  console.log(`  Total synced records: ${state.total_synced_records}`);
   console.log(`  Tracked file offsets: ${Object.keys(state.file_offsets).length}`);
-  console.log(`  Auth token: ${state.access_token ? 'stored' : 'none'}`);
 
   // Claude paths
   console.log('\nClaude Data Paths:');

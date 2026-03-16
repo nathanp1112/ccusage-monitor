@@ -5,7 +5,6 @@ import { usePathname } from 'next/navigation'
 import {
   LayoutDashboard,
   Users,
-  FileBarChart,
   Settings,
   ChevronLeft,
   Gamepad2,
@@ -23,7 +22,6 @@ type NavItem = {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/', icon: LayoutDashboard },
   { name: 'Members', href: '/members', icon: Users },
-  { name: 'Reports', href: '/reports', icon: FileBarChart },
   { name: 'Playground', href: '/playground', icon: Gamepad2 },
   { name: 'Settings', href: '/settings', icon: Settings },
 ]

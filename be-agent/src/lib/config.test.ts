@@ -3,40 +3,38 @@ import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-// We test the migration logic and pruneStaleOffsets by importing from config.
-// Since config.ts uses hardcoded paths (AGENT_CONFIG_DIR), we test the
-// migration function logic directly and the prune function.
-
 import type { AgentState, FileOffset } from './config.js';
 
 describe('State Migration', () => {
   // Re-implement migrateState logic here since it's not exported.
-  // This tests the same logic that loadState() uses internally.
+  // This tests the same v2→v3 migration logic.
   function migrateState(raw: Record<string, unknown>): AgentState {
     const DEFAULT: AgentState = {
-      version: 2,
-      last_sync_timestamp: null,
-      last_sync_records: 0,
-      total_synced_records: 0,
+      version: 3,
       file_offsets: {},
-      last_prompt_sync_timestamp: null,
+      targets: {},
     };
 
-    if (raw.version === 2) {
+    if (raw.version === 3) {
       return { ...DEFAULT, ...raw } as AgentState;
     }
 
+    // V2 or V1 → V3
     return {
-      version: 2,
-      last_sync_timestamp: (raw.last_sync_timestamp as string) || null,
-      last_sync_records: (raw.last_sync_records as number) || 0,
-      total_synced_records: (raw.total_synced_records as number) || 0,
-      file_offsets: {},
-      last_prompt_sync_timestamp: null,
+      version: 3,
+      file_offsets: (raw.file_offsets as Record<string, FileOffset>) || {},
+      targets: {
+        'migrated': {
+          last_sync_timestamp: (raw.last_sync_timestamp as string) || null,
+          last_sync_records: (raw.last_sync_records as number) || 0,
+          total_synced_records: (raw.total_synced_records as number) || 0,
+          last_prompt_sync_timestamp: (raw.last_prompt_sync_timestamp as string) || null,
+        },
+      },
     };
   }
 
-  it('should migrate v1 state to v2', () => {
+  it('should migrate v1 state to v3', () => {
     const v1State = {
       last_sync_timestamp: '2026-02-10T18:00:00Z',
       last_sync_records: 3,
@@ -47,18 +45,18 @@ describe('State Migration', () => {
 
     const result = migrateState(v1State);
 
-    expect(result.version).toBe(2);
-    expect(result.last_sync_timestamp).toBe('2026-02-10T18:00:00Z');
-    expect(result.total_synced_records).toBe(31367);
+    expect(result.version).toBe(3);
+    expect(result.targets['migrated'].last_sync_timestamp).toBe('2026-02-10T18:00:00Z');
+    expect(result.targets['migrated'].total_synced_records).toBe(31367);
     expect(result.file_offsets).toEqual({});
-    expect(result.last_prompt_sync_timestamp).toBeNull();
+    expect(result.targets['migrated'].last_prompt_sync_timestamp).toBeNull();
     // Old fields should not be present
     expect((result as unknown as Record<string, unknown>).seen_request_ids).toBeUndefined();
     expect((result as unknown as Record<string, unknown>).seen_prompt_uuids).toBeUndefined();
   });
 
-  it('should preserve v2 state as-is', () => {
-    const v2State: AgentState = {
+  it('should migrate v2 state to v3', () => {
+    const v2State = {
       version: 2,
       last_sync_timestamp: '2026-02-10T18:00:00Z',
       last_sync_records: 5,
@@ -71,17 +69,17 @@ describe('State Migration', () => {
 
     const result = migrateState(v2State as unknown as Record<string, unknown>);
 
-    expect(result.version).toBe(2);
+    expect(result.version).toBe(3);
     expect(result.file_offsets).toEqual(v2State.file_offsets);
-    expect(result.last_prompt_sync_timestamp).toBe('2026-02-10T12:00:00Z');
+    expect(result.targets['migrated'].last_prompt_sync_timestamp).toBe('2026-02-10T12:00:00Z');
   });
 
   it('should handle empty/malformed state gracefully', () => {
     const result = migrateState({});
 
-    expect(result.version).toBe(2);
-    expect(result.last_sync_timestamp).toBeNull();
-    expect(result.total_synced_records).toBe(0);
+    expect(result.version).toBe(3);
+    expect(result.targets['migrated'].last_sync_timestamp).toBeNull();
+    expect(result.targets['migrated'].total_synced_records).toBe(0);
     expect(result.file_offsets).toEqual({});
   });
 });
@@ -105,15 +103,12 @@ describe('pruneStaleOffsets', () => {
     writeFileSync(existingFile, '{}');
 
     const state: AgentState = {
-      version: 2,
-      last_sync_timestamp: null,
-      last_sync_records: 0,
-      total_synced_records: 0,
+      version: 3,
       file_offsets: {
         [existingFile]: { byteOffset: 100, lastModified: '2026-01-01T00:00:00Z' },
         '/nonexistent/path.jsonl': { byteOffset: 200, lastModified: '2026-01-01T00:00:00Z' },
       },
-      last_prompt_sync_timestamp: null,
+      targets: {},
     };
 
     pruneStaleOffsets(state);

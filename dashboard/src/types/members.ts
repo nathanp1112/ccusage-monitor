@@ -3,7 +3,7 @@
  */
 
 // View toggle options for members page
-export type MembersViewType = 'ranking' | 'cards' | 'chart'
+export type MembersViewType = 'ranking' | 'chart'
 
 // Sort field options
 export type MemberSortField = 'costUsd' | 'inputTokens' | 'outputTokens' | 'name'

@@ -6,7 +6,7 @@ import { loadConfig } from '../lib/config.js';
 import { request } from 'undici';
 
 // Read version from package.json at build time (inlined by bundler)
-const CURRENT_VERSION = '0.5.2';
+const CURRENT_VERSION = '0.5.3';
 
 interface VersionResponse {
   success: boolean;
@@ -36,14 +36,17 @@ function compareSemver(a: string, b: string): number {
 export async function updateCommand(options: { force?: boolean }): Promise<void> {
   const config = loadConfig();
 
-  if (!config.server_url || !config.email) {
+  if (config.targets.length === 0) {
     console.error('Agent not configured. Run "ccusage-agent setup" first.');
     process.exit(1);
   }
 
+  // Use first target's server_url for version check
+  const serverUrl = config.targets[0].server_url;
+
   console.log('CCUsage Agent Update\n');
   console.log(`  Current version: ${CURRENT_VERSION}`);
-  console.log(`  Server: ${config.server_url}`);
+  console.log(`  Server: ${serverUrl}`);
   console.log('');
 
   // 1. Check latest version
@@ -51,7 +54,7 @@ export async function updateCommand(options: { force?: boolean }): Promise<void>
   let versionInfo: VersionResponse;
   try {
     const { statusCode, body } = await request(
-      `${config.server_url}/api/agent/version`
+      `${serverUrl}/api/agent/version`
     );
     versionInfo = (await body.json()) as VersionResponse;
 
@@ -102,10 +105,11 @@ export async function updateCommand(options: { force?: boolean }): Promise<void>
     process.exit(1);
   }
 
-  // 5. Re-run setup with existing config (uses the NEW binary)
+  // 5. Re-run setup for the first target (re-installs the auto-start service with the new binary)
   console.log('\nRestarting service...');
   try {
-    const setupCmd = `ccusage-agent setup --server ${config.server_url} --email ${config.email} --interval ${config.sync_interval_minutes}`;
+    const first = config.targets[0];
+    const setupCmd = `ccusage-agent setup --server ${first.server_url} --email ${first.email} --interval ${config.sync_interval_minutes}`;
     execSync(setupCmd, { stdio: 'inherit' });
   } catch (err) {
     console.error('  ✗ Setup failed:', (err as Error).message);
@@ -113,7 +117,7 @@ export async function updateCommand(options: { force?: boolean }): Promise<void>
     process.exit(1);
   }
 
-  // 6. Run sync (migration sets offsets to current EOF, no --force needed)
+  // 6. Run sync (pushes to all targets)
   console.log('\nSyncing data...');
   try {
     execSync('ccusage-agent sync', { stdio: 'inherit' });

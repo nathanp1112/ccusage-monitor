@@ -94,8 +94,10 @@ function generateUUID(): string {
 }
 
 function getDateFromTimestamp(timestamp: string): string {
-  // Extract date part from ISO timestamp
-  return timestamp.split('T')[0];
+  // Convert UTC timestamp to Vietnam time (UTC+7) before extracting date
+  const date = new Date(timestamp);
+  date.setHours(date.getUTCHours() + 7);
+  return date.toISOString().split('T')[0];
 }
 
 function getYearMonthFromDate(date: string): { year: number; month: number } {
@@ -598,7 +600,7 @@ async function savePrompts(
   // Group prompts by year-month
   const promptsByMonth = new Map<string, SyncRequestPrompt[]>();
   for (const prompt of prompts) {
-    const date = prompt.timestamp.split('T')[0];
+    const date = getDateFromTimestamp(prompt.timestamp);
     const [yearStr, monthStr] = date.split('-');
     const key = `${yearStr}-${monthStr}`;
 

@@ -2,7 +2,8 @@ import { createInterface } from 'node:readline';
 import {
   loadConfig,
   saveConfig,
-  DEFAULT_CONFIG,
+  upsertTarget,
+  BUILT_IN_SERVER_URL,
   CONFIG_FILE,
 } from '../lib/config.js';
 
@@ -45,17 +46,14 @@ export async function initCommand(options: {
   console.log('Initializing CCUsage Agent...\n');
 
   const existingConfig = loadConfig();
+  const firstTarget = existingConfig.targets[0];
 
-  let serverUrl = options.serverUrl || existingConfig.server_url;
-  let email = options.email || existingConfig.email;
+  let serverUrl = options.serverUrl || firstTarget?.server_url || BUILT_IN_SERVER_URL || 'http://localhost:3003';
+  let email = options.email || firstTarget?.email || '';
 
   // Interactive mode
   if (options.interactive !== false && !email) {
-    serverUrl = await prompt(
-      'Server URL',
-      serverUrl || DEFAULT_CONFIG.server_url
-    );
-
+    serverUrl = await prompt('Server URL', serverUrl);
     email = await prompt('Your email', email);
 
     if (!email) {
@@ -71,22 +69,22 @@ export async function initCommand(options: {
   }
 
   // Save configuration
-  const config = {
-    ...DEFAULT_CONFIG,
-    ...existingConfig,
+  const config = upsertTarget(existingConfig, {
     server_url: serverUrl,
     email: email,
-  };
+  });
 
   saveConfig(config);
 
   console.log('\nConfiguration saved!');
   console.log(`  Config file: ${CONFIG_FILE}`);
-  console.log(`  Server URL: ${serverUrl}`);
-  console.log(`  Email: ${email}`);
+  console.log(`  Targets: ${config.targets.length}`);
+  for (const t of config.targets) {
+    console.log(`    - ${t.email} → ${t.server_url}`);
+  }
   console.log(`  Sync interval: ${config.sync_interval_minutes} minutes`);
   console.log(`  Claude paths:`);
-  for (const p of config.claude_paths) {
+  for (const p of existingConfig.claude_paths) {
     console.log(`    - ${p}`);
   }
 

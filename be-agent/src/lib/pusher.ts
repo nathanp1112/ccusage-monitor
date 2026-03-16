@@ -111,7 +111,7 @@ async function pushBatch(
       cwd: p.cwd,
       content: p.content,
     })),
-    agent_version: '0.5.2',
+    agent_version: '0.5.3',
     hostname: hostname(),
     local_ip: getLocalIp(),
     public_ip: publicIp,

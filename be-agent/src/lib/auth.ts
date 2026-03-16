@@ -1,6 +1,6 @@
 import { request } from 'undici';
-import type { AgentConfig, AgentState } from './config.js';
-import { saveState } from './config.js';
+import type { AgentConfig, AgentState, TargetState } from './config.js';
+import { setTargetState, targetId, saveState } from './config.js';
 
 interface LoginResponse {
   success: boolean;
@@ -64,7 +64,6 @@ export async function refreshToken(
 
 /**
  * Decode JWT payload without verification (just to check expiry).
- * Returns null if the token is malformed.
  */
 function decodeJwtPayload(token: string): { exp?: number } | null {
   try {
@@ -83,28 +82,32 @@ function decodeJwtPayload(token: string): { exp?: number } | null {
 function isTokenExpired(token: string): boolean {
   const payload = decodeJwtPayload(token);
   if (!payload?.exp) return true;
-  return Date.now() / 1000 > payload.exp - 60; // 60s buffer
+  return Date.now() / 1000 > payload.exp - 60;
 }
 
 /**
- * Get a valid access token. Refreshes or re-logins as needed.
- * Updates state with new tokens and saves to disk.
+ * Get a valid access token for a specific target.
+ * Refreshes or re-logins as needed. Updates state with new tokens and saves to disk.
  */
 export async function getValidToken(
   config: AgentConfig,
-  state: AgentState
+  state: AgentState,
+  targetState: TargetState
 ): Promise<string> {
+  const tid = targetId({ server_url: config.server_url, email: config.email });
+
   // 1. Check existing access token
-  if (state.access_token && !isTokenExpired(state.access_token)) {
-    return state.access_token;
+  if (targetState.access_token && !isTokenExpired(targetState.access_token)) {
+    return targetState.access_token;
   }
 
   // 2. Try refresh
-  if (state.refresh_token && !isTokenExpired(state.refresh_token)) {
+  if (targetState.refresh_token && !isTokenExpired(targetState.refresh_token)) {
     try {
-      const tokens = await refreshToken(config.server_url, state.refresh_token);
-      state.access_token = tokens.accessToken;
-      state.refresh_token = tokens.refreshToken;
+      const tokens = await refreshToken(config.server_url, targetState.refresh_token);
+      targetState.access_token = tokens.accessToken;
+      targetState.refresh_token = tokens.refreshToken;
+      setTargetState(state, tid, targetState);
       saveState(state);
       return tokens.accessToken;
     } catch {
@@ -120,8 +123,9 @@ export async function getValidToken(
   }
 
   const tokens = await login(config.server_url, config.email, config.password);
-  state.access_token = tokens.accessToken;
-  state.refresh_token = tokens.refreshToken;
+  targetState.access_token = tokens.accessToken;
+  targetState.refresh_token = tokens.refreshToken;
+  setTargetState(state, tid, targetState);
   saveState(state);
   return tokens.accessToken;
 }

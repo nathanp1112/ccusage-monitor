@@ -31,13 +31,6 @@ export const queryKeys = {
       ['members', 'detail', id, 'charts', year, month] as const,
   },
 
-  // Reports
-  reports: {
-    all: ['reports'] as const,
-    daily: (dateRange?: DateRange) => ['reports', 'daily', dateRange] as const,
-    monthly: (month?: string) => ['reports', 'monthly', month] as const,
-  },
-
   // Auth
   auth: {
     session: ['auth', 'session'] as const,

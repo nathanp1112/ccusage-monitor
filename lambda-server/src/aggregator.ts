@@ -101,23 +101,30 @@ interface MemberAggregatedData {
 // Helper Functions
 // ============================================
 
-function getCurrentMonth(): { year: number; month: number } {
+/** Get current time in Vietnam timezone (UTC+7) */
+function getVietnamNow(): Date {
   const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1 };
+  now.setHours(now.getUTCHours() + 7);
+  return now;
+}
+
+function getCurrentMonth(): { year: number; month: number } {
+  const now = getVietnamNow();
+  return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1 };
 }
 
 function getPreviousMonth(): { year: number; month: number } {
-  const now = new Date();
-  const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  return { year: prev.getFullYear(), month: prev.getMonth() + 1 };
+  const now = getVietnamNow();
+  const prev = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  return { year: prev.getUTCFullYear(), month: prev.getUTCMonth() + 1 };
 }
 
 function getLast30DaysDates(): string[] {
   const dates: string[] = [];
-  const now = new Date();
+  const now = getVietnamNow();
   for (let i = LIMITS.DAILY_TREND_DAYS - 1; i >= 0; i--) {
     const date = new Date(now);
-    date.setDate(date.getDate() - i);
+    date.setUTCDate(date.getUTCDate() - i);
     dates.push(date.toISOString().split('T')[0]);
   }
   return dates;

@@ -31,7 +31,9 @@ export function FileExtensionChart({ data, title }: FileExtensionChartProps) {
     return null
   }
 
-  const chartData = [...data].sort((a, b) => b.operationCount - a.operationCount)
+  const chartData = [...data]
+    .filter((d) => d.operationCount > 0)
+    .sort((a, b) => b.operationCount - a.operationCount)
 
   const barHeight = 36
   const chartHeight = Math.max(200, chartData.length * barHeight + 40)

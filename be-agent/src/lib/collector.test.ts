@@ -91,7 +91,7 @@ describe('File Offset Tracking', () => {
 
     const result = await collectUsageData(
       { server_url: '', email: '', sync_interval_minutes: 60, max_batch_size: 1000, retry_attempts: 3, claude_paths: [join(tmpDir, 'projects')] } as any,
-      { version: 2, last_sync_timestamp: null, last_sync_records: 0, total_synced_records: 0, file_offsets: {}, last_prompt_sync_timestamp: null },
+      { version: 3, file_offsets: {}, targets: {} },
     );
 
     expect(result.entries).toHaveLength(3);
@@ -123,14 +123,11 @@ describe('File Offset Tracking', () => {
     const result = await collectUsageData(
       { server_url: '', email: '', sync_interval_minutes: 60, max_batch_size: 1000, retry_attempts: 3, claude_paths: [join(tmpDir, 'projects')] } as any,
       {
-        version: 2,
-        last_sync_timestamp: null,
-        last_sync_records: 0,
-        total_synced_records: 0,
+        version: 3,
         file_offsets: {
           [file]: { byteOffset: offsetAfterInitial, lastModified: new Date().toISOString() },
         },
-        last_prompt_sync_timestamp: null,
+        targets: {},
       },
     );
 
@@ -152,14 +149,11 @@ describe('File Offset Tracking', () => {
     const result = await collectUsageData(
       { server_url: '', email: '', sync_interval_minutes: 60, max_batch_size: 1000, retry_attempts: 3, claude_paths: [join(tmpDir, 'projects')] } as any,
       {
-        version: 2,
-        last_sync_timestamp: null,
-        last_sync_records: 0,
-        total_synced_records: 0,
+        version: 3,
         file_offsets: {
           [file]: { byteOffset: fileSize, lastModified: new Date().toISOString() },
         },
-        last_prompt_sync_timestamp: null,
+        targets: {},
       },
     );
 
@@ -177,14 +171,11 @@ describe('File Offset Tracking', () => {
     const result = await collectUsageData(
       { server_url: '', email: '', sync_interval_minutes: 60, max_batch_size: 1000, retry_attempts: 3, claude_paths: [join(tmpDir, 'projects')] } as any,
       {
-        version: 2,
-        last_sync_timestamp: null,
-        last_sync_records: 0,
-        total_synced_records: 0,
+        version: 3,
         file_offsets: {
           [file]: { byteOffset: 99999, lastModified: new Date().toISOString() }, // Larger than file
         },
-        last_prompt_sync_timestamp: null,
+        targets: {},
       },
     );
 
@@ -205,7 +196,7 @@ describe('File Offset Tracking', () => {
     // With prompts
     const withPrompts = await collectUsageData(
       { server_url: '', email: '', sync_interval_minutes: 60, max_batch_size: 1000, retry_attempts: 3, claude_paths: [join(tmpDir, 'projects')] } as any,
-      { version: 2, last_sync_timestamp: null, last_sync_records: 0, total_synced_records: 0, file_offsets: {}, last_prompt_sync_timestamp: null },
+      { version: 3, file_offsets: {}, targets: {} },
       { skipPrompts: false },
     );
     expect(withPrompts.prompts).toHaveLength(1);
@@ -213,7 +204,7 @@ describe('File Offset Tracking', () => {
     // Without prompts
     const withoutPrompts = await collectUsageData(
       { server_url: '', email: '', sync_interval_minutes: 60, max_batch_size: 1000, retry_attempts: 3, claude_paths: [join(tmpDir, 'projects')] } as any,
-      { version: 2, last_sync_timestamp: null, last_sync_records: 0, total_synced_records: 0, file_offsets: {}, last_prompt_sync_timestamp: null },
+      { version: 3, file_offsets: {}, targets: {} },
       { skipPrompts: true },
     );
     expect(withoutPrompts.prompts).toHaveLength(0);

@@ -1,4 +1,13 @@
-import { loadConfig, loadState, saveState, isConfigured } from '../lib/config.js';
+import {
+  loadConfig,
+  loadState,
+  saveState,
+  isConfigured,
+  targetId,
+  getTargetState,
+  setTargetState,
+  toAgentConfig,
+} from '../lib/config.js';
 import { collectUsageData } from '../lib/collector.js';
 import { pushToServer } from '../lib/pusher.js';
 
@@ -21,32 +30,29 @@ export async function pushCommand(options: {
   }
 
   const config = loadConfig();
-  let state = loadState();
+  const state = loadState();
 
   // Force mode - reset file offsets to re-read all files from scratch
   if (options.force) {
     if (verbose) console.log('Force mode: collecting all historical data...\n');
-    state = { ...state, file_offsets: {} };
+    state.file_offsets = {};
   }
 
   // Current-month mode - re-read all files but only push entries from current month
   if (options.currentMonth) {
     if (verbose) console.log('Current-month mode: re-parsing all files, filtering to current month only...\n');
-    state = { ...state, file_offsets: {} };
-  }
-
-  // Always print scanned folders so users know what's being watched — DO NOT REMOVE
-  console.log('Scanning:');
-  for (const p of config.claude_paths) {
-    console.log(`  ${p}`);
+    state.file_offsets = {};
   }
 
   if (verbose) {
-    console.log(`Last sync: ${state.last_sync_timestamp || 'never'}`);
+    console.log('Scanning:');
+    for (const p of config.claude_paths) {
+      console.log(`  ${p}`);
+    }
     console.log(`Tracked files: ${Object.keys(state.file_offsets).length}`);
   }
 
-  // Collect data
+  // Collect data ONCE (shared across all targets)
   const startTime = Date.now();
   const result = await collectUsageData(config, state, {
     skipPrompts: options.noPrompts ?? false,
@@ -74,7 +80,7 @@ export async function pushCommand(options: {
   if (options.currentMonth) {
     const now = new Date();
     const curYear = now.getFullYear();
-    const curMonth = now.getMonth() + 1; // 1-indexed
+    const curMonth = now.getMonth() + 1;
     const before = result.entries.length;
     result.entries = result.entries.filter((e) => {
       const d = new Date(e.timestamp);
@@ -83,7 +89,6 @@ export async function pushCommand(options: {
     if (verbose) {
       console.log(`Current-month filter: kept ${result.entries.length}/${before} entries for ${curYear}-${String(curMonth).padStart(2, '0')}`);
     }
-    // Don't re-sync prompts that may span prior months — skip them in this mode
     result.prompts = [];
   }
 
@@ -105,7 +110,6 @@ export async function pushCommand(options: {
   // Nothing to sync
   if (result.entries.length === 0 && result.prompts.length === 0 && result.projects.length === 0) {
     console.log('No new data to sync.');
-    // Still save updated file offsets so we don't re-scan unchanged files
     saveState({ ...state, file_offsets: result.updatedFileOffsets });
     return;
   }
@@ -122,43 +126,55 @@ export async function pushCommand(options: {
         console.log(`  ... and ${result.entries.length - 3} more`);
       }
     }
+    console.log(`\nTargets (${config.targets.length}):`);
+    for (const target of config.targets) {
+      console.log(`  - ${target.email} → ${target.server_url}`);
+    }
     return;
   }
 
-  // Push to server
-  if (verbose) {
-    console.log(`\nPushing ${result.entries.length} entries to server...`);
-  }
+  // Push to each target independently
+  for (const target of config.targets) {
+    const tid = targetId(target);
+    const ts = getTargetState(state, tid);
+    const agentConfig = toAgentConfig(config, target);
 
-  const pushResult = await pushToServer(result.entries, config, {
-    projects: result.projects,
-    prompts: result.prompts,
-    onProgress: verbose
-      ? (batch, total) => { process.stdout.write(`\r  Batch ${batch}/${total}...`); }
-      : undefined,
-  });
-
-  if (verbose) console.log('');
-
-  if (pushResult.errors.length > 0) {
-    console.error(`Sync errors: ${pushResult.errors.length}`);
-    for (const err of pushResult.errors) {
-      console.error(`  - ${err}`);
+    if (verbose) {
+      console.log(`\nPushing ${result.entries.length} entries to ${target.email} @ ${target.server_url}...`);
     }
+
+    const pushResult = await pushToServer(result.entries, agentConfig, {
+      projects: result.projects,
+      prompts: result.prompts,
+      onProgress: verbose
+        ? (batch, total) => { process.stdout.write(`\r  Batch ${batch}/${total}...`); }
+        : undefined,
+    });
+
+    if (verbose) console.log('');
+
+    if (pushResult.errors.length > 0) {
+      console.error(`Sync errors (${target.email}): ${pushResult.errors.length}`);
+      for (const err of pushResult.errors) {
+        console.error(`  - ${err}`);
+      }
+    }
+
+    // Update per-target state
+    setTargetState(state, tid, {
+      ...ts,
+      last_sync_timestamp: new Date().toISOString(),
+      last_sync_records: pushResult.totalSynced,
+      total_synced_records: ts.total_synced_records + pushResult.totalSynced,
+      last_prompt_sync_timestamp: options.noPrompts
+        ? ts.last_prompt_sync_timestamp
+        : new Date().toISOString(),
+    });
+
+    console.log(`[${target.email}] Synced ${pushResult.totalSynced} entries, ${pushResult.totalSkipped} skipped. Total: ${state.targets[tid].total_synced_records}`);
   }
 
-  // Update state with new file offsets
-  const newState = {
-    ...state,
-    last_sync_timestamp: new Date().toISOString(),
-    last_sync_records: pushResult.totalSynced,
-    total_synced_records: state.total_synced_records + pushResult.totalSynced,
-    file_offsets: result.updatedFileOffsets,
-    last_prompt_sync_timestamp: options.noPrompts
-      ? state.last_prompt_sync_timestamp
-      : new Date().toISOString(),
-  };
-
-  saveState(newState);
-  console.log(`Synced ${pushResult.totalSynced} entries, ${pushResult.totalSkipped} skipped. Total: ${newState.total_synced_records}`);
+  // Save state once (shared file_offsets + all target states)
+  state.file_offsets = result.updatedFileOffsets;
+  saveState(state);
 }

@@ -122,7 +122,7 @@ export function DailyModelUsageChart({
 
   return (
     <Card className={className}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0 pb-2">
         <CardTitle>{title}</CardTitle>
         <Select value={tokenType} onValueChange={(v) => setTokenType(v as TokenType)}>
           <SelectTrigger className="w-[130px]">

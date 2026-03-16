@@ -15,6 +15,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip'
+import { Star } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 export interface DailyUsageData {
@@ -36,7 +37,7 @@ interface UsageHeatMapProps {
 
 type MetricType = 'cost' | 'tokens' | 'requests'
 
-const DAYS_OF_WEEK = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 
 // Heat map color intensity levels (5 levels)
 // Requests: white (0), very light green (1-39), light green (40-100), medium green (100-300), bold green (300-1000), purple (>1000)
@@ -95,7 +96,7 @@ export function UsageHeatMap({
     const firstDay = new Date(year, month, 1)
     const lastDay = new Date(year, month + 1, 0)
     const daysInMonth = lastDay.getDate()
-    const startDayOfWeek = firstDay.getDay()
+    const startDayOfWeek = (firstDay.getDay() + 6) % 7 // Monday = 0
 
     // Create a map of date -> data
     const dataMap = new Map<string, DailyUsageData>()
@@ -116,12 +117,12 @@ export function UsageHeatMap({
     })
 
     // Build weeks array
-    const weeks: Array<Array<{ day: number | null; date: string | null; value: number; heatLevel: number }>> = []
-    let currentWeek: Array<{ day: number | null; date: string | null; value: number; heatLevel: number }> = []
+    const weeks: Array<Array<{ day: number | null; date: string | null; value: number; heatLevel: number; starCount: number }>> = []
+    let currentWeek: Array<{ day: number | null; date: string | null; value: number; heatLevel: number; starCount: number }> = []
 
     // Fill empty days at start of first week
     for (let i = 0; i < startDayOfWeek; i++) {
-      currentWeek.push({ day: null, date: null, value: 0, heatLevel: -1 })
+      currentWeek.push({ day: null, date: null, value: 0, heatLevel: -1, starCount: 0 })
     }
 
     // Fill in days of month
@@ -138,8 +139,15 @@ export function UsageHeatMap({
         : 0
 
       const heatLevel = getHeatLevel(value, maxValue, metric)
+      let starCount = 0
+      if (metric === 'requests') {
+        if (value > 5000) starCount = 4
+        else if (value > 4000) starCount = 3
+        else if (value > 3000) starCount = 2
+        else if (value > 2000) starCount = 1
+      }
 
-      currentWeek.push({ day, date: dateStr, value, heatLevel })
+      currentWeek.push({ day, date: dateStr, value, heatLevel, starCount })
 
       if (currentWeek.length === 7) {
         weeks.push(currentWeek)
@@ -149,7 +157,7 @@ export function UsageHeatMap({
 
     // Fill empty days at end of last week
     while (currentWeek.length > 0 && currentWeek.length < 7) {
-      currentWeek.push({ day: null, date: null, value: 0, heatLevel: -1 })
+      currentWeek.push({ day: null, date: null, value: 0, heatLevel: -1, starCount: 0 })
     }
     if (currentWeek.length > 0) {
       weeks.push(currentWeek)
@@ -211,7 +219,7 @@ export function UsageHeatMap({
                       <TooltipTrigger asChild>
                         <div
                           className={cn(
-                            'rounded-sm flex items-center justify-center font-medium transition-colors',
+                            'relative rounded-sm flex items-center justify-center font-medium transition-colors',
                             compact ? 'w-8 h-8 text-[10px]' : 'aspect-square text-xs',
                             cell.day === null
                               ? 'bg-transparent'
@@ -222,6 +230,20 @@ export function UsageHeatMap({
                             cell.day !== null && 'cursor-pointer hover:ring-2 hover:ring-ring'
                           )}
                         >
+                          {cell.starCount > 0 && (
+                            <div className={cn(
+                              'absolute flex',
+                              compact ? '-top-1 -right-1 gap-0' : '-top-1.5 -right-1.5 gap-0'
+                            )}>
+                              {Array.from({ length: cell.starCount }).map((_, i) => (
+                                <Star key={i} className={cn(
+                                  'fill-yellow-400 text-yellow-400 drop-shadow-sm',
+                                  compact ? 'w-2 h-2' : 'w-2.5 h-2.5',
+                                  i > 0 && (compact ? '-ml-1' : '-ml-1.5')
+                                )} />
+                              ))}
+                            </div>
+                          )}
                           {cell.day}
                         </div>
                       </TooltipTrigger>
@@ -262,6 +284,25 @@ export function UsageHeatMap({
                 ].map(({ color, label }) => (
                   <div key={label} className="flex items-center gap-0.5">
                     <div className={cn('rounded-sm', color, compact ? 'w-2 h-2' : 'w-3 h-3')} />
+                    <span>{label}</span>
+                  </div>
+                ))}
+                {[
+                  { count: 1, label: '>2k' },
+                  { count: 2, label: '>3k' },
+                  { count: 3, label: '>4k' },
+                  { count: 4, label: '>5k' },
+                ].map(({ count, label }) => (
+                  <div key={label} className="flex items-center gap-0.5">
+                    <div className="flex">
+                      {Array.from({ length: count }).map((_, i) => (
+                        <Star key={i} className={cn(
+                          'fill-yellow-400 text-yellow-400',
+                          compact ? 'w-2 h-2' : 'w-3 h-3',
+                          i > 0 && '-ml-1'
+                        )} />
+                      ))}
+                    </div>
                     <span>{label}</span>
                   </div>
                 ))}

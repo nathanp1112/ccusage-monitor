@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -17,8 +17,20 @@ import { apiClient } from '@/lib/api-client'
 import { queryKeys } from '@/lib/query-keys'
 import { useSession } from '@/hooks/use-auth'
 
+interface ProjectDataItem {
+  path: string
+  gitRepo: string | null
+  firstSeen: string
+  lastSeen: string
+}
+
 interface MemberDetailChartsProps {
   memberId: string
+  selectedYear: number
+  selectedMonth: number
+  onYearChange: (year: number) => void
+  onMonthChange: (month: number) => void
+  projects?: ProjectDataItem[]
 }
 
 // Monthly data structure within yearly response
@@ -119,13 +131,9 @@ const months = [
 const currentYear = new Date().getFullYear()
 const years = Array.from({ length: currentYear - 2023 }, (_, i) => 2024 + i)
 
-export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
+export function MemberDetailCharts({ memberId, selectedYear, selectedMonth, onYearChange, onMonthChange, projects }: MemberDetailChartsProps) {
   const { data: session } = useSession()
   const isAdmin = session?.role === 'admin'
-
-  const now = new Date()
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth())
 
   const { data, isLoading } = useQuery({
     queryKey: queryKeys.members.yearlyRaw(memberId, selectedYear),
@@ -245,6 +253,16 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
     return data?.promptStats?.[monthKey]?.count ?? 0
   }, [data?.promptStats, selectedMonth])
 
+  // Filter projects to only those active in the selected month
+  // projectBreakdown uses dash-separated keys (e.g. "-Users-foo-bar"),
+  // while projects use forward-slash paths (e.g. "/Users/foo/bar")
+  const filteredProjects = useMemo(() => {
+    if (!projects || !currentMonthData?.projectBreakdown) return []
+    const toKey = (path: string) => path.replace(/\//g, '-')
+    const activePaths = new Set(currentMonthData.projectBreakdown.map((p) => p.project))
+    return projects.filter((p) => activePaths.has(toKey(p.path)))
+  }, [projects, currentMonthData?.projectBreakdown])
+
   const monthName = new Date(selectedYear, selectedMonth).toLocaleDateString(
     'en-US',
     { month: 'long', year: 'numeric' }
@@ -277,7 +295,7 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
                     key={year}
                     variant={selectedYear === year ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setSelectedYear(year)}
+                    onClick={() => onYearChange(year)}
                     className="min-w-[60px]"
                   >
                     {year}
@@ -294,7 +312,7 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
                     key={m.value}
                     variant={selectedMonth === m.value ? 'default' : 'outline'}
                     size="sm"
-                    onClick={() => setSelectedMonth(m.value)}
+                    onClick={() => onMonthChange(m.value)}
                     className={cn(
                       'min-w-[44px]',
                       selectedMonth === m.value && 'font-semibold'
@@ -370,11 +388,19 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
         />
       </div>
 
-      {/* Charts Row 2: Daily Token Usage by Model */}
-      <DailyModelUsageChart
-        data={dailyModelUsage}
-        title={`Daily Token Usage by Model - ${monthName}`}
-      />
+      {/* Charts Row 2: Daily Token Usage by Model + File Activity by Language */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <DailyModelUsageChart
+          data={dailyModelUsage}
+          title={`Daily Token Usage by Model - ${monthName}`}
+        />
+        {extensionActivityData.length > 0 && (
+          <FileExtensionChart
+            data={extensionActivityData}
+            title={`File Activity by Language - ${monthName}`}
+          />
+        )}
+      </div>
 
       {/* Project Activity — admin only */}
       {isAdmin && projectActivityData.length > 0 && (
@@ -384,12 +410,43 @@ export function MemberDetailCharts({ memberId }: MemberDetailChartsProps) {
         />
       )}
 
-      {/* File Activity by Language — visible to all */}
-      {extensionActivityData.length > 0 && (
-        <FileExtensionChart
-          data={extensionActivityData}
-          title={`File Activity by Language - ${monthName}`}
-        />
+      {/* Projects table — admin only, filtered by selected month */}
+      {isAdmin && filteredProjects.length > 0 && (
+        <div>
+          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
+            Projects ({filteredProjects.length})
+          </p>
+          <div className="rounded-lg border overflow-x-auto">
+            <table className="w-full text-sm min-w-[500px]">
+              <thead>
+                <tr className="border-b bg-muted/50">
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Path</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Git Repo</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">First Seen</th>
+                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Last Seen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredProjects.map((project) => (
+                  <tr key={project.path} className="border-b last:border-b-0">
+                    <td className="px-3 py-2 font-mono text-xs" title={project.path}>
+                      {project.path.split('/').slice(-2).join('/')}
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
+                      {project.gitRepo || '—'}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {new Date(project.firstSeen).toLocaleDateString()}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">
+                      {new Date(project.lastSeen).toLocaleDateString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
     </div>
   )

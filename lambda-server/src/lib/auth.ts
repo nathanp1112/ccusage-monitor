@@ -1,6 +1,14 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { sign, verify } from 'hono/jwt';
-import usersData from '../data/users.json';
+import usersDevData from '../data/users.dev.json';
+import usersJitData from '../data/users.jit.json';
+
+// Derive stage from BUCKET_NAME (e.g. "ccusage-data-dev" → "dev")
+function getStage(): string {
+  const bucket = process.env.BUCKET_NAME || '';
+  if (bucket.startsWith('ccusage-data-')) return bucket.replace('ccusage-data-', '');
+  return 'dev';
+}
 
 // JWT configuration — fail hard in production if secret not set
 const DEV_SECRET = 'dev-secret-key-do-not-use-in-production';
@@ -30,10 +38,12 @@ export interface JwtPayload {
 }
 
 /**
- * Load users (imported from JSON at build time, bundler-friendly)
+ * Load users for the current stage (imported from JSON at build time, bundler-friendly)
  */
 export function loadUsers(): UserRecord[] {
-  return usersData as UserRecord[];
+  const stage = getStage();
+  if (stage === 'jit') return usersJitData as UserRecord[];
+  return usersDevData as UserRecord[];
 }
 
 /**

@@ -1,13 +1,12 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { StatsBar, type StatItem } from '@/components/shared/stats-bar'
 import { TagList } from '@/components/shared/tag-list'
 import { ErrorState } from '@/components/shared/error-state'
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import { MemberDetailCharts } from './member-detail-charts'
 import { useMember } from '@/hooks/use-members'
-import { useSession } from '@/hooks/use-auth'
 import { calculateTotals, getModelsUsed } from '@/lib/calculations'
 import { formatCurrency, formatTokens } from '@/lib/utils'
 
@@ -16,9 +15,11 @@ interface MemberDetailContentProps {
 }
 
 export function MemberDetailContent({ memberId }: MemberDetailContentProps) {
+  const now = new Date()
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth())
+
   const { data: member, isLoading, error, refetch } = useMember(memberId)
-  const { data: currentUser } = useSession()
-  const isAdmin = currentUser?.role === 'admin'
 
   // Calculate totals from daily usage on frontend
   const totals = useMemo(() => {
@@ -72,7 +73,14 @@ export function MemberDetailContent({ memberId }: MemberDetailContentProps) {
       </div>
 
       {/* Charts with Month Selector */}
-      <MemberDetailCharts memberId={memberId} />
+      <MemberDetailCharts
+        memberId={memberId}
+        selectedYear={selectedYear}
+        selectedMonth={selectedMonth}
+        onYearChange={setSelectedYear}
+        onMonthChange={setSelectedMonth}
+        projects={member.projects}
+      />
 
       {/* Models Used */}
       <div>
@@ -81,45 +89,6 @@ export function MemberDetailContent({ memberId }: MemberDetailContentProps) {
         </p>
         <TagList items={modelsUsed} emptyMessage="No models used yet" />
       </div>
-
-      {/* Projects (admin only) */}
-      {isAdmin && member.projects && member.projects.length > 0 && (
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase text-muted-foreground">
-            Projects ({member.projects.length})
-          </p>
-          <div className="rounded-lg border">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b bg-muted/50">
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Path</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Git Repo</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">First Seen</th>
-                  <th className="px-3 py-2 text-left font-medium text-muted-foreground">Last Seen</th>
-                </tr>
-              </thead>
-              <tbody>
-                {member.projects.map((project) => (
-                  <tr key={project.path} className="border-b last:border-b-0">
-                    <td className="px-3 py-2 font-mono text-xs" title={project.path}>
-                      {project.path.split('/').slice(-2).join('/')}
-                    </td>
-                    <td className="px-3 py-2 font-mono text-xs text-muted-foreground">
-                      {project.gitRepo || '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {new Date(project.firstSeen).toLocaleDateString()}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-muted-foreground">
-                      {new Date(project.lastSeen).toLocaleDateString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
     </div>
   )

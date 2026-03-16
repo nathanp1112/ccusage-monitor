@@ -12,27 +12,29 @@ export async function registerCommand(options: RegisterOptions): Promise<void> {
   }
 
   const config = loadConfig();
-  console.log(`Registering data for ${config.email}...`);
 
-  try {
-    const res = await request(`${config.server_url}/api/register/update`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: config.email, data: options.data }),
-      headersTimeout: 5000,
-      bodyTimeout: 5000,
-    });
+  // Register for all targets
+  for (const target of config.targets) {
+    console.log(`Registering data for ${target.email} @ ${target.server_url}...`);
 
-    const body = (await res.body.json()) as { success: boolean; error?: string };
+    try {
+      const res = await request(`${target.server_url}/api/register/update`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: target.email, data: options.data }),
+        headersTimeout: 5000,
+        bodyTimeout: 5000,
+      });
 
-    if (!body.success) {
-      console.error(`Error: ${body.error || 'Unknown error'}`);
-      process.exit(1);
+      const body = (await res.body.json()) as { success: boolean; error?: string };
+
+      if (!body.success) {
+        console.error(`  ✗ ${target.email}: ${body.error || 'Unknown error'}`);
+      } else {
+        console.log(`  ✓ Registered data for ${target.email}`);
+      }
+    } catch (err) {
+      console.error(`  ✗ ${target.email}: could not reach server — ${(err as Error).message}`);
     }
-
-    console.log(`  ✓ Registered data for ${config.email}`);
-  } catch (err) {
-    console.error('Error: could not reach server —', (err as Error).message);
-    process.exit(1);
   }
 }

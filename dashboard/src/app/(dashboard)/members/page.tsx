@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect } from 'react'
-import { LayoutGrid, BarChart3, List } from 'lucide-react'
+import { BarChart3, List } from 'lucide-react'
 import { PageHeader } from '@/components/shared/page-header'
 import { StatsBar, type StatItem } from '@/components/shared/stats-bar'
 import { ControlsBar } from '@/components/shared/controls-bar'
@@ -9,7 +9,6 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { ErrorState } from '@/components/shared/error-state'
 import { DataSheet } from '@/components/shared/data-sheet'
 import { ViewToggle, type ViewOption } from '@/components/shared/view-toggle'
-import { MemberCard } from '@/components/members/member-card'
 import { MemberRankingList } from '@/components/members/member-ranking-list'
 import { MemberDetailContent } from '@/components/members/member-detail-content'
 import { CostTreemapChart } from '@/components/charts/cost-treemap-chart'
@@ -29,7 +28,6 @@ import type { MembersViewType, MemberSortField } from '@/types/members'
 
 const viewOptions: ViewOption<MembersViewType>[] = [
   { value: 'ranking', label: 'Ranking', icon: <List className="h-3.5 w-3.5" /> },
-  { value: 'cards', label: 'Cards', icon: <LayoutGrid className="h-3.5 w-3.5" /> },
   { value: 'chart', label: 'Chart', icon: <BarChart3 className="h-3.5 w-3.5" /> },
 ]
 
@@ -151,18 +149,6 @@ export default function MembersPage() {
           sortField={sortField}
           onMemberClick={openMemberDetail}
         />
-      )}
-
-      {view === 'cards' && (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {rankedMembers.map((member) => (
-            <MemberCard
-              key={member.id}
-              member={member}
-              onClick={() => openMemberDetail(member.id)}
-            />
-          ))}
-        </div>
       )}
 
       {view === 'chart' && (
