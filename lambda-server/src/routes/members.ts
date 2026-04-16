@@ -23,6 +23,20 @@ import type {
 
 const membersRoute = new Hono();
 
+/**
+ * Emails (prefix match) to hide from the members list.
+ * Members whose email starts with any of these prefixes will be excluded.
+ */
+const HIDDEN_EMAIL_PREFIXES = [
+  'brendan.pham@',
+  'brendan.nghiapham@',
+];
+
+function isHiddenEmail(email: string): boolean {
+  const lower = email.toLowerCase();
+  return HIDDEN_EMAIL_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
 // UUID v4 validation regex
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -61,18 +75,20 @@ membersRoute.get('/', async (c) => {
         });
       }
 
-      // Return members from registry with zero stats
-      const members = Object.values(registry.members).map((m) => ({
-        id: m.id,
-        name: m.name,
-        email: m.email,
-        role: m.role,
-        isActive: m.isActive,
-        lastSyncAt: m.lastSyncAt,
-        currentMonth: { costUsd: 0, inputTokens: 0, outputTokens: 0 },
-        previousMonth: { costUsd: 0, inputTokens: 0, outputTokens: 0 },
-        costChangePercent: 0,
-      }));
+      // Return members from registry with zero stats (excluding hidden emails)
+      const members = Object.values(registry.members)
+        .filter((m) => !isHiddenEmail(m.email))
+        .map((m) => ({
+          id: m.id,
+          name: m.name,
+          email: m.email,
+          role: m.role,
+          isActive: m.isActive,
+          lastSyncAt: m.lastSyncAt,
+          currentMonth: { costUsd: 0, inputTokens: 0, outputTokens: 0 },
+          previousMonth: { costUsd: 0, inputTokens: 0, outputTokens: 0 },
+          costChangePercent: 0,
+        }));
 
       return c.json({
         success: true,
@@ -85,9 +101,15 @@ membersRoute.get('/', async (c) => {
       });
     }
 
+    // Filter out hidden members from pre-computed view
+    const filteredView = {
+      ...membersView,
+      members: membersView.members.filter((m) => !isHiddenEmail(m.email)),
+    };
+
     return c.json({
       success: true,
-      data: membersView,
+      data: filteredView,
     });
   } catch (error) {
     console.error('Members list fetch error:', error);

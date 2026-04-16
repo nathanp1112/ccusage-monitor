@@ -1,0 +1,20 @@
+agent_update: {
+  shape: sequence_diagram
+
+  BeAgent
+  APIGateway
+  LambdaAPI
+  S3
+
+  BeAgent -> APIGateway: "GET /api/agent/version"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> S3: "GetObject releases/version.json"
+  S3 -> LambdaAPI: "version + filename"
+  LambdaAPI -> LambdaAPI: "Generate presigned URL for releases/filename (10 min expiry)"
+  LambdaAPI -> BeAgent: "Return version, filename, downloadUrl"
+  BeAgent -> BeAgent: "Compare with current version"
+  BeAgent -> S3: "Download .tgz via presigned URL (direct S3 access)"
+  S3 -> BeAgent: "Agent binary (.tgz)"
+  BeAgent -> BeAgent: "npm install -g ccusage-agent-version.tgz"
+  BeAgent -> BeAgent: "Re-run setup + sync --force"
+}

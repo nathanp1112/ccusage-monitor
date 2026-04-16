@@ -1,0 +1,52 @@
+members_list: {
+  shape: sequence_diagram
+
+  Browser
+  MembersPage
+  useMembers
+  apiClient
+  APIGateway
+  LambdaAPI
+  S3
+
+  Browser -> MembersPage: "Navigate to /members"
+  MembersPage -> useMembers: "Mount triggers query"
+  useMembers -> apiClient: "GET /api/members"
+  apiClient -> APIGateway: "GET /api/members (Bearer token)"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> S3: "GetObject views/members.json"
+  S3 -> LambdaAPI: "MembersView JSON"
+  LambdaAPI -> apiClient: "Return success + MembersView"
+  apiClient -> useMembers: "Response"
+  useMembers -> useMembers: "adaptMembersResponse() transform"
+  useMembers -> MembersPage: "FrontendMemberListItem array"
+  MembersPage -> MembersPage: "calculateRankings() + calculateTeamTotals()"
+  MembersPage -> Browser: "Render StatsBar + MemberRankingList"
+}
+
+member_detail: {
+  shape: sequence_diagram
+
+  Browser
+  MembersPage
+  useMember
+  apiClient
+  APIGateway
+  LambdaAPI
+  S3
+
+  Browser -> MembersPage: "Click member card"
+  MembersPage -> MembersPage: "openMemberDetail() + pushState URL"
+  MembersPage -> MembersPage: "Open DataSheet (slide-over)"
+  MembersPage -> useMember: "Trigger query(memberId, year)"
+  useMember -> apiClient: "GET /api/members/:id with year param"
+  apiClient -> APIGateway: "GET /api/members/:id?year=2026 (Bearer token)"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> S3: "GetObject views/members/id/2026.json"
+  S3 -> LambdaAPI: "MemberYearlyView JSON"
+  LambdaAPI -> apiClient: "Return success + MemberYearlyView"
+  apiClient -> useMember: "Response"
+  useMember -> useMember: "adaptMemberDetailResponse() transform"
+  useMember -> MembersPage: "FrontendMemberDetailData"
+  MembersPage -> Browser: "Render MemberDetailContent + charts"
+}

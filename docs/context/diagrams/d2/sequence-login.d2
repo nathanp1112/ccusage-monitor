@@ -1,0 +1,40 @@
+login_flow: {
+  shape: sequence_diagram
+
+  Browser
+  Dashboard
+  APIGateway
+  LambdaAPI
+  UserStore
+
+  Browser -> Dashboard: "Enter email + password"
+  Dashboard -> APIGateway: "POST /api/auth/login"
+  APIGateway -> LambdaAPI: "Forward request"
+  LambdaAPI -> LambdaAPI: "Auth middleware BYPASS (login is public)"
+  LambdaAPI -> UserStore: "findUser(email) from users.stage.json"
+  UserStore -> LambdaAPI: "User record (SHA256 hashed password)"
+  LambdaAPI -> LambdaAPI: "verifyPassword (SHA256 + timingSafeEqual)"
+  LambdaAPI -> LambdaAPI: "generateAccessToken (60min) in parallel"
+  LambdaAPI -> LambdaAPI: "generateRefreshToken (20days) in parallel"
+  LambdaAPI -> APIGateway: "Return accessToken, refreshToken, user"
+  APIGateway -> Dashboard: "200 OK"
+  Dashboard -> Dashboard: "setTokens(localStorage) + queryClient.setData"
+  Dashboard -> Browser: "Redirect to / (dashboard)"
+}
+
+token_refresh: {
+  shape: sequence_diagram
+
+  Dashboard
+  APIGateway
+  LambdaAPI
+
+  Dashboard -> APIGateway: "Any request with expired token"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> Dashboard: "401 Unauthorized"
+  Dashboard -> APIGateway: "POST /api/auth/refresh with refreshToken"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> LambdaAPI: "Verify refresh token"
+  LambdaAPI -> Dashboard: "New accessToken + refreshToken"
+  Dashboard -> Dashboard: "setTokens() + retry original request"
+}

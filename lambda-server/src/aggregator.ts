@@ -98,6 +98,24 @@ interface MemberAggregatedData {
 }
 
 // ============================================
+// Hidden Members Filter
+// ============================================
+
+/**
+ * Emails (prefix match) to exclude from all views.
+ * Members whose email starts with any of these prefixes will be hidden.
+ */
+const HIDDEN_EMAIL_PREFIXES = [
+  'brendan.pham@',
+  'brendan.nghiapham@',
+];
+
+function isHiddenEmail(email: string): boolean {
+  const lower = email.toLowerCase();
+  return HIDDEN_EMAIL_PREFIXES.some((prefix) => lower.startsWith(prefix));
+}
+
+// ============================================
 // Helper Functions
 // ============================================
 
@@ -625,7 +643,10 @@ export const handler = async (
       };
     }
 
-    const memberIds = Object.keys(registry.members);
+    // Filter out hidden members
+    const memberIds = Object.keys(registry.members).filter(
+      (id) => !isHiddenEmail(registry.members[id].email)
+    );
     console.log(`Processing ${memberIds.length} members with concurrency ${LIMITS.S3_CONCURRENCY}`);
 
     // 2. Fetch aggregated data for all members with bounded concurrency

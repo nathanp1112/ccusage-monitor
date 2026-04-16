@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "skills": {
+    "axiom-extensions-widgets-ref": {
+      "source": "charleswiltgen/axiom",
+      "sourceType": "github",
+      "computedHash": "c5e76eae973db97a0298281597c7409a13e01ad2f2c85fc3077bebd9bfa82f64"
+    },
+    "macos-hig-designer": {
+      "source": "designnotdrum/skills",
+      "sourceType": "github",
+      "computedHash": "c6ee6a329b7de297974252d2ae6e4be1019871b5e7f9b93c52e447aaee4f85e3"
+    },
+    "swiftui-patterns": {
+      "source": "affaan-m/everything-claude-code",
+      "sourceType": "github",
+      "computedHash": "86aa244015049fd70bbc4359d8e6aff6b901a38c09ebfc08cee02cbc46d407e5"
+    }
+  }
+}

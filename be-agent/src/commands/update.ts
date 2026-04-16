@@ -3,6 +3,7 @@ import { writeFileSync, unlinkSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { loadConfig } from '../lib/config.js';
+// import { installQuotaHook } from '../lib/hooks.js'; // DISABLED: quota hook not yet deployed
 import { request } from 'undici';
 
 // Read version from package.json at build time (inlined by bundler)
@@ -117,7 +118,16 @@ export async function updateCommand(options: { force?: boolean }): Promise<void>
     process.exit(1);
   }
 
-  // 6. Run sync (pushes to all targets)
+  // 6. Install quota hook — DISABLED: feature not yet deployed
+  // console.log('\nInstalling quota hook...');
+  // try {
+  //   installQuotaHook();
+  //   console.log('  ✓ Hook installed');
+  // } catch (err) {
+  //   console.warn('  ⚠ Hook install skipped:', (err as Error).message);
+  // }
+
+  // 7. Run sync (pushes to all targets)
   console.log('\nSyncing data...');
   try {
     execSync('ccusage-agent sync', { stdio: 'inherit' });

@@ -285,6 +285,14 @@ export function getCommandQueueKey(memberId: string): string {
   return `commands/${memberId}/queue.json`;
 }
 
+/**
+ * Get S3 key for quota tracking
+ * Format: quota/current.json (single file, array of all members)
+ */
+export function getQuotaKey(): string {
+  return 'quota/current.json';
+}
+
 // ============================================
 // Retry Logic for Concurrent Writes
 // ============================================

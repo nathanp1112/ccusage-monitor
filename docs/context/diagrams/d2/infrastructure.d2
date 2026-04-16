@@ -1,0 +1,348 @@
+# CCUsage Monitor — Infrastructure Diagram
+# AWS architecture with data flow for all components
+
+# ─────────────────────────────────────────────
+# DEVELOPER MACHINE
+# ─────────────────────────────────────────────
+DeveloperMachine: "Developer Machine" {
+  style: {
+    fill: "#f2f3f4"
+    stroke: "#717d7e"
+    stroke-width: 2
+    font-color: "#2c3e50"
+    bold: true
+  }
+
+  JSONL_Files: "JSONL Log Files" {
+    shape: page
+    style: { fill: "#d5d8dc"; stroke: "#717d7e" }
+    label: "~/.claude/projects/*/*.jsonl\n~/.ccs/instances/*/projects/*"
+  }
+
+  AutoStart: "Auto-Start Service" {
+    shape: rectangle
+    style: { fill: "#d5d8dc"; stroke: "#717d7e" }
+    label: "launchd (macOS)\nsystemd (Linux)"
+  }
+
+  BeAgent: "be-agent" {
+    shape: rectangle
+    style: { fill: "#aab7b8"; stroke: "#717d7e"; font-color: "#1c2833"; bold: true }
+    label: "be-agent (Node.js CLI)\n─────────────────\nParse JSONL logs\nExtract usage entries\nBatch + retry push\nAuto-update from S3\nPoll admin commands"
+  }
+
+  JSONL_Files -> BeAgent: "reads" {
+    style: { stroke: "#717d7e" }
+  }
+  AutoStart -> BeAgent: "starts / schedules" {
+    style: { stroke: "#717d7e"; stroke-dash: 4 }
+  }
+}
+
+# ─────────────────────────────────────────────
+# BROWSER / END USER
+# ─────────────────────────────────────────────
+Browser: "Browser" {
+  shape: rectangle
+  style: {
+    fill: "#f2f3f4"
+    stroke: "#717d7e"
+    stroke-width: 2
+    font-color: "#2c3e50"
+    bold: true
+  }
+  label: "Browser\n─────────────────\nDashboard user\n(admin / member)"
+}
+
+# ─────────────────────────────────────────────
+# AWS CLOUD
+# ─────────────────────────────────────────────
+AWS: "AWS Cloud  ·  ap-southeast-1" {
+  style: {
+    fill: "#fdfefe"
+    stroke: "#e67e22"
+    stroke-width: 3
+    font-color: "#784212"
+    bold: true
+  }
+
+  # ── STAGE: dev ──────────────────────────────
+  Stage_dev: "Stage: dev" {
+    style: {
+      fill: "#fef9e7"
+      stroke: "#d4ac0d"
+      stroke-width: 2
+      font-color: "#7d6608"
+      bold: true
+    }
+
+    APIGateway_dev: "API Gateway" {
+      shape: rectangle
+      style: { fill: "#d6eaf8"; stroke: "#2980b9"; font-color: "#1a5276"; bold: true }
+      label: "API Gateway\n─────────────────\nhttps://5kvqadz4mc\n.execute-api\n.ap-southeast-1\n.amazonaws.com"
+    }
+
+    Lambda_dev: "Lambda Functions" {
+      style: {
+        fill: "#fdf2e9"
+        stroke: "#e67e22"
+        stroke-width: 2
+        font-color: "#784212"
+        bold: true
+      }
+
+      LambdaAPI_dev: "ccusage-monitor-dev-api" {
+        shape: rectangle
+        style: { fill: "#fdebd0"; stroke: "#e67e22"; font-color: "#784212"; bold: true }
+        label: "Lambda: API Handler\n(Hono framework)\n─────────────────\n/api/sync\n/api/dashboard\n/api/members\n/api/auth  (JWT HS256)\n/api/agent\n/api/admin\n/api/register\n─────────────────\nGzip decompression\nLazy route loading\nCold start optimized"
+      }
+
+      LambdaAgg_dev: "ccusage-monitor-dev-aggregator" {
+        shape: rectangle
+        style: { fill: "#fdebd0"; stroke: "#e67e22"; font-color: "#784212"; bold: true }
+        label: "Lambda: Aggregator\n─────────────────\nReads aggregated/\nWrites views/\n─────────────────\nMax 10 parallel\nmember processing"
+      }
+
+      LambdaAPI_dev -> LambdaAgg_dev: "InvokeCommand\n(manual trigger via\nPOST /api/admin/aggregate)" {
+        style: { stroke: "#e67e22"; stroke-dash: 4 }
+      }
+    }
+
+    S3_Data_dev: "S3 Data Bucket: ccusage-data-dev" {
+      style: {
+        fill: "#eafaf1"
+        stroke: "#1e8449"
+        stroke-width: 2
+        font-color: "#145a32"
+        bold: true
+      }
+
+      Layer1_dev: "Layer 1 — Input  (written by sync)" {
+        shape: rectangle
+        style: { fill: "#d5f5e3"; stroke: "#1e8449"; font-color: "#145a32" }
+        label: "raw/{memberId}/{year}-{month}.json\naggregated/{memberId}/{year}-{month}.json\nmembers/index.json  (ETag concurrency)\nsync-logs/{year}-{month}/{memberId}.json\nprojects/{memberId}.json\nprompts/{memberId}/{year}-{month}.json\ncommands/{memberId}/queue.json"
+      }
+
+      Layer2_dev: "Layer 2 — Output  (written by aggregator)" {
+        shape: rectangle
+        style: { fill: "#a9dfbf"; stroke: "#1e8449"; font-color: "#145a32" }
+        label: "views/dashboard.json\nviews/members.json\nviews/members/{memberId}/{year}.json"
+      }
+
+      Layer3_dev: "Metadata & Releases" {
+        shape: rectangle
+        style: { fill: "#d5f5e3"; stroke: "#1e8449"; font-color: "#145a32" }
+        label: "meta/last-processed.json\nreleases/version.json\nreleases/ccusage-agent-*.tgz"
+      }
+    }
+
+    S3_Dashboard_dev: "S3 Dashboard Bucket\ncc-usage-monitor-tvf" {
+      shape: rectangle
+      style: { fill: "#d5f5e3"; stroke: "#1e8449"; font-color: "#145a32"; bold: true }
+      label: "S3: cc-usage-monitor-tvf\n─────────────────\nNext.js 15 static export\nHTML / JS / CSS"
+    }
+
+    CloudFront_dev: "CloudFront CDN (dev)" {
+      shape: rectangle
+      style: { fill: "#d6eaf8"; stroke: "#2980b9"; font-color: "#1a5276"; bold: true }
+      label: "CloudFront\n─────────────────\nDist: E1W8WZ55TBZY1P\nd1ohuii7czj4jp\n.cloudfront.net\n─────────────────\nServes SPA\nClient-side routing"
+    }
+
+    EventBridge_dev: "EventBridge Scheduler (dev)" {
+      shape: rectangle
+      style: { fill: "#e8daef"; stroke: "#7d3c98"; font-color: "#4a235a"; bold: true }
+      label: "EventBridge\n─────────────────\nHourly schedule\ncron(0 * * * ? *)"
+    }
+
+    # Internal dev wiring
+    APIGateway_dev -> Lambda_dev.LambdaAPI_dev: "routes all /api/* requests" {
+      style: { stroke: "#2980b9"; stroke-width: 2 }
+    }
+    EventBridge_dev -> Lambda_dev.LambdaAgg_dev: "hourly trigger" {
+      style: { stroke: "#7d3c98"; stroke-width: 2 }
+    }
+    Lambda_dev.LambdaAPI_dev -> S3_Data_dev.Layer1_dev: "read / write\n(sync, members,\nprojects, prompts,\ncommands)" {
+      style: { stroke: "#1e8449"; stroke-width: 2 }
+    }
+    Lambda_dev.LambdaAPI_dev -> S3_Data_dev.Layer2_dev: "read\n(serve views\nto dashboard)" {
+      style: { stroke: "#1e8449"; stroke-dash: 4 }
+    }
+    Lambda_dev.LambdaAPI_dev -> S3_Data_dev.Layer3_dev: "read\n(version manifest,\npresigned URL)" {
+      style: { stroke: "#1e8449"; stroke-dash: 4 }
+    }
+    Lambda_dev.LambdaAgg_dev -> S3_Data_dev.Layer1_dev: "reads aggregated/" {
+      style: { stroke: "#e67e22"; stroke-dash: 4 }
+    }
+    Lambda_dev.LambdaAgg_dev -> S3_Data_dev.Layer2_dev: "writes views/" {
+      style: { stroke: "#e67e22"; stroke-width: 2 }
+    }
+    CloudFront_dev -> S3_Dashboard_dev: "origin request\n(static assets)" {
+      style: { stroke: "#2980b9"; stroke-width: 2 }
+    }
+  }
+
+  # ── STAGE: jit ──────────────────────────────
+  Stage_jit: "Stage: jit" {
+    style: {
+      fill: "#eaf2ff"
+      stroke: "#2980b9"
+      stroke-width: 2
+      font-color: "#1a5276"
+      bold: true
+    }
+
+    APIGateway_jit: "API Gateway" {
+      shape: rectangle
+      style: { fill: "#d6eaf8"; stroke: "#2980b9"; font-color: "#1a5276"; bold: true }
+      label: "API Gateway\n─────────────────\nhttps://eu9i1zr4x6\n.execute-api\n.ap-southeast-1\n.amazonaws.com"
+    }
+
+    Lambda_jit: "Lambda Functions" {
+      style: {
+        fill: "#fdf2e9"
+        stroke: "#e67e22"
+        stroke-width: 2
+        font-color: "#784212"
+        bold: true
+      }
+
+      LambdaAPI_jit: "ccusage-monitor-jit-api" {
+        shape: rectangle
+        style: { fill: "#fdebd0"; stroke: "#e67e22"; font-color: "#784212"; bold: true }
+        label: "Lambda: API Handler\n(Hono framework)\n─────────────────\n/api/sync\n/api/dashboard\n/api/members\n/api/auth  (JWT HS256)\n/api/agent\n/api/admin\n/api/register\n─────────────────\nGzip decompression\nLazy route loading\nCold start optimized"
+      }
+
+      LambdaAgg_jit: "ccusage-monitor-jit-aggregator" {
+        shape: rectangle
+        style: { fill: "#fdebd0"; stroke: "#e67e22"; font-color: "#784212"; bold: true }
+        label: "Lambda: Aggregator\n─────────────────\nReads aggregated/\nWrites views/\n─────────────────\nMax 10 parallel\nmember processing"
+      }
+
+      LambdaAPI_jit -> LambdaAgg_jit: "InvokeCommand\n(manual trigger via\nPOST /api/admin/aggregate)" {
+        style: { stroke: "#e67e22"; stroke-dash: 4 }
+      }
+    }
+
+    S3_Data_jit: "S3 Data Bucket: ccusage-data-jit" {
+      style: {
+        fill: "#eafaf1"
+        stroke: "#1e8449"
+        stroke-width: 2
+        font-color: "#145a32"
+        bold: true
+      }
+
+      Layer1_jit: "Layer 1 — Input  (written by sync)" {
+        shape: rectangle
+        style: { fill: "#d5f5e3"; stroke: "#1e8449"; font-color: "#145a32" }
+        label: "raw/{memberId}/{year}-{month}.json\naggregated/{memberId}/{year}-{month}.json\nmembers/index.json  (ETag concurrency)\nsync-logs/{year}-{month}/{memberId}.json\nprojects/{memberId}.json\nprompts/{memberId}/{year}-{month}.json\ncommands/{memberId}/queue.json"
+      }
+
+      Layer2_jit: "Layer 2 — Output  (written by aggregator)" {
+        shape: rectangle
+        style: { fill: "#a9dfbf"; stroke: "#1e8449"; font-color: "#145a32" }
+        label: "views/dashboard.json\nviews/members.json\nviews/members/{memberId}/{year}.json"
+      }
+
+      Layer3_jit: "Metadata & Releases" {
+        shape: rectangle
+        style: { fill: "#d5f5e3"; stroke: "#1e8449"; font-color: "#145a32" }
+        label: "meta/last-processed.json\nreleases/version.json\nreleases/ccusage-agent-*.tgz"
+      }
+    }
+
+    S3_Dashboard_jit: "S3 Dashboard Bucket\ncc-usage-monitor-jit" {
+      shape: rectangle
+      style: { fill: "#d5f5e3"; stroke: "#1e8449"; font-color: "#145a32"; bold: true }
+      label: "S3: cc-usage-monitor-jit\n─────────────────\nNext.js 15 static export\nHTML / JS / CSS"
+    }
+
+    CloudFront_jit: "CloudFront CDN (jit)" {
+      shape: rectangle
+      style: { fill: "#d6eaf8"; stroke: "#2980b9"; font-color: "#1a5276"; bold: true }
+      label: "CloudFront\n─────────────────\nDist: E3W5CFHO5Z8UU2\ndg2i6v0xgt3mw\n.cloudfront.net\n─────────────────\nServes SPA\nClient-side routing"
+    }
+
+    EventBridge_jit: "EventBridge Scheduler (jit)" {
+      shape: rectangle
+      style: { fill: "#e8daef"; stroke: "#7d3c98"; font-color: "#4a235a"; bold: true }
+      label: "EventBridge\n─────────────────\nHourly schedule\ncron(0 * * * ? *)"
+    }
+
+    # Internal jit wiring
+    APIGateway_jit -> Lambda_jit.LambdaAPI_jit: "routes all /api/* requests" {
+      style: { stroke: "#2980b9"; stroke-width: 2 }
+    }
+    EventBridge_jit -> Lambda_jit.LambdaAgg_jit: "hourly trigger" {
+      style: { stroke: "#7d3c98"; stroke-width: 2 }
+    }
+    Lambda_jit.LambdaAPI_jit -> S3_Data_jit.Layer1_jit: "read / write\n(sync, members,\nprojects, prompts,\ncommands)" {
+      style: { stroke: "#1e8449"; stroke-width: 2 }
+    }
+    Lambda_jit.LambdaAPI_jit -> S3_Data_jit.Layer2_jit: "read\n(serve views\nto dashboard)" {
+      style: { stroke: "#1e8449"; stroke-dash: 4 }
+    }
+    Lambda_jit.LambdaAPI_jit -> S3_Data_jit.Layer3_jit: "read\n(version manifest,\npresigned URL)" {
+      style: { stroke: "#1e8449"; stroke-dash: 4 }
+    }
+    Lambda_jit.LambdaAgg_jit -> S3_Data_jit.Layer1_jit: "reads aggregated/" {
+      style: { stroke: "#e67e22"; stroke-dash: 4 }
+    }
+    Lambda_jit.LambdaAgg_jit -> S3_Data_jit.Layer2_jit: "writes views/" {
+      style: { stroke: "#e67e22"; stroke-width: 2 }
+    }
+    CloudFront_jit -> S3_Dashboard_jit: "origin request\n(static assets)" {
+      style: { stroke: "#2980b9"; stroke-width: 2 }
+    }
+  }
+}
+
+# ═══════════════════════════════════════════════════════════
+# EXTERNAL DATA FLOWS
+# ═══════════════════════════════════════════════════════════
+
+# ── Flow 1: Agent → API Gateway (sync) ──
+DeveloperMachine.BeAgent -> AWS.Stage_dev.APIGateway_dev: "POST /api/sync\n(entries, projects, prompts)\nbatched: 1000 entries,\n500 prompts per request\ndedup by request_id" {
+  style: { stroke: "#2c3e50"; stroke-width: 2 }
+}
+
+DeveloperMachine.BeAgent -> AWS.Stage_jit.APIGateway_jit: "POST /api/sync\n(entries, projects, prompts)\nbatched: 1000 entries,\n500 prompts per request\ndedup by request_id" {
+  style: { stroke: "#2c3e50"; stroke-width: 2 }
+}
+
+# ── Flow 2: Agent → API Gateway (commands polling) ──
+DeveloperMachine.BeAgent -> AWS.Stage_dev.APIGateway_dev: "GET /api/agent/commands\nPOST /api/agent/commands/:id/ack\n(poll pending admin commands)" {
+  style: { stroke: "#717d7e"; stroke-dash: 5 }
+}
+
+DeveloperMachine.BeAgent -> AWS.Stage_jit.APIGateway_jit: "GET /api/agent/commands\nPOST /api/agent/commands/:id/ack\n(poll pending admin commands)" {
+  style: { stroke: "#717d7e"; stroke-dash: 5 }
+}
+
+# ── Flow 3: Agent auto-update ──
+DeveloperMachine.BeAgent -> AWS.Stage_dev.APIGateway_dev: "GET /api/agent/version\n(check for updates)" {
+  style: { stroke: "#717d7e"; stroke-dash: 5 }
+}
+
+# ── Flow 4: Browser → CloudFront (dashboard load) ──
+Browser -> AWS.Stage_dev.CloudFront_dev: "HTTPS request\n(load dashboard SPA)" {
+  style: { stroke: "#2980b9"; stroke-width: 2 }
+}
+
+Browser -> AWS.Stage_jit.CloudFront_jit: "HTTPS request\n(load dashboard SPA)" {
+  style: { stroke: "#2980b9"; stroke-width: 2 }
+}
+
+# ── Flow 5: Dashboard SPA → API Gateway (data fetching) ──
+Browser -> AWS.Stage_dev.APIGateway_dev: "GET /api/dashboard\nGET /api/members\nGET /api/members/:id\nPOST /api/auth/login\n(JWT auth required)" {
+  style: { stroke: "#1a5276"; stroke-width: 2; stroke-dash: 4 }
+}
+
+Browser -> AWS.Stage_jit.APIGateway_jit: "GET /api/dashboard\nGET /api/members\nGET /api/members/:id\nPOST /api/auth/login\n(JWT auth required)" {
+  style: { stroke: "#1a5276"; stroke-width: 2; stroke-dash: 4 }
+}
+
+# ── Flow 6: Agent downloads binary from S3 presigned URL ──
+DeveloperMachine.BeAgent -> AWS.Stage_dev.S3_Data_dev.Layer3_dev: "S3 presigned URL download\nreleases/ccusage-agent-*.tgz\n(10 min expiry, no auth needed)" {
+  style: { stroke: "#e67e22"; stroke-dash: 5 }
+}

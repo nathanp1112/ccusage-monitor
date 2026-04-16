@@ -168,6 +168,14 @@ app.all('/api/*', async (c, next) => {
     return registerApp.fetch(c.req.raw);
   }
 
+  // Route: /api/quota (Quota tracking) — DISABLED: feature not yet deployed
+  // if (path.startsWith('/api/quota')) {
+  //   const { default: quotaRoute } = await import('./routes/quota.js');
+  //   const quotaApp = new Hono();
+  //   quotaApp.route('/api/quota', quotaRoute);
+  //   return quotaApp.fetch(c.req.raw);
+  // }
+
   // Route: /api/admin/* (Admin endpoints)
   if (path.startsWith('/api/admin')) {
     const { default: adminRoute } = await import('./routes/admin.js');

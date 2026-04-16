@@ -1,0 +1,50 @@
+dashboard_fetch: {
+  shape: sequence_diagram
+
+  Browser
+  DashboardPage
+  useDashboard
+  apiClient
+  APIGateway
+  LambdaAPI
+  S3
+
+  Browser -> DashboardPage: "Navigate to /"
+  DashboardPage -> DashboardPage: "AuthGuard checks hasTokens()"
+  DashboardPage -> useDashboard: "Mount triggers query"
+  useDashboard -> useDashboard: "Check TanStack cache (staleTime 5min)"
+  useDashboard -> apiClient: "GET /api/dashboard"
+  apiClient -> apiClient: "Attach Authorization Bearer token"
+  apiClient -> APIGateway: "GET /api/dashboard"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> LambdaAPI: "Auth middleware validates JWT"
+  LambdaAPI -> S3: "GetObject views/dashboard.json"
+  S3 -> LambdaAPI: "DashboardView JSON"
+  LambdaAPI -> APIGateway: "Return success + DashboardView"
+  APIGateway -> apiClient: "200 OK"
+  apiClient -> useDashboard: "Response data"
+  useDashboard -> useDashboard: "isLambdaResponse() check"
+  useDashboard -> useDashboard: "adaptDashboardResponse() transform"
+  useDashboard -> DashboardPage: "FrontendDashboardData"
+  DashboardPage -> Browser: "Render StatsGrid + DashboardCharts"
+}
+
+model_distribution_fetch: {
+  shape: sequence_diagram
+
+  DashboardCharts
+  apiClient
+  APIGateway
+  LambdaAPI
+  S3
+  Browser
+
+  DashboardCharts -> apiClient: "GET /api/dashboard/model-distribution (parallel)"
+  apiClient -> APIGateway: "GET /api/dashboard/model-distribution"
+  APIGateway -> LambdaAPI: "Forward"
+  LambdaAPI -> S3: "GetObject views/dashboard.json (modelDistribution field)"
+  S3 -> LambdaAPI: "DashboardView JSON"
+  LambdaAPI -> apiClient: "Return modelDistribution array"
+  apiClient -> DashboardCharts: "Response data"
+  DashboardCharts -> Browser: "Render ModelDistributionChart or CostTreemapChart"
+}

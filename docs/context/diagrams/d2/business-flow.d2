@@ -1,0 +1,458 @@
+direction: right
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+# ============================================================
+# ACTORS
+# ============================================================
+
+actors: Actors {
+  style.fill: "#f8fafc"
+  style.stroke: "#94a3b8"
+  style.stroke-width: 2
+  style.font-color: "#0f172a"
+
+  developer: Developer {
+    shape: person
+    style.fill: "#e0f2fe"
+    style.stroke: "#0284c7"
+    style.font-color: "#0c4a6e"
+    label: "Developer\n(Uses Claude Code\nfor AI-assisted coding)"
+  }
+
+  admin: Team Lead / Admin {
+    shape: person
+    style.fill: "#fef3c7"
+    style.stroke: "#d97706"
+    style.font-color: "#78350f"
+    label: "Team Lead / Admin\n(Monitors team usage,\ncosts & productivity)"
+  }
+
+  system: System (Automated) {
+    shape: hexagon
+    style.fill: "#f1f5f9"
+    style.stroke: "#64748b"
+    style.font-color: "#1e293b"
+    label: "System\n(Agent daemon,\nScheduler, Aggregator)"
+  }
+}
+
+# ============================================================
+# PHASE 1 — DATA COLLECTION (Continuous)
+# ============================================================
+
+phase1: Phase 1: Data Collection {
+  style.fill: "#eff6ff"
+  style.stroke: "#3b82f6"
+  style.stroke-width: 3
+  style.font-color: "#1e40af"
+  label: "Phase 1: Data Collection\n(Continuous — runs every N minutes per developer)"
+
+  coding: AI-Assisted Coding {
+    style.fill: "#dbeafe"
+    style.stroke: "#2563eb"
+    style.font-color: "#1e3a8a"
+    label: "AI-Assisted Coding\nDeveloper uses Claude Code\n(Opus / Sonnet / Haiku)"
+  }
+
+  logs: JSONL Log Files {
+    shape: page
+    style.fill: "#bfdbfe"
+    style.stroke: "#3b82f6"
+    style.font-color: "#1e3a8a"
+    label: "JSONL Log Files\n~/.claude/projects/*/*.jsonl\nModel · Tokens · Cost\nProject path · File extensions"
+  }
+
+  agent_wake: Agent Wakes Up {
+    shape: diamond
+    style.fill: "#93c5fd"
+    style.stroke: "#1d4ed8"
+    style.font-color: "#1e3a8a"
+    label: "Agent Wakes Up\n(Scheduled interval)"
+  }
+
+  new_entries: New Entries Since\nLast Sync? {
+    shape: diamond
+    style.fill: "#93c5fd"
+    style.stroke: "#1d4ed8"
+    style.font-color: "#1e3a8a"
+    label: "New Entries Since\nLast Sync?"
+  }
+
+  parse: Parse & Extract {
+    style.fill: "#dbeafe"
+    style.stroke: "#2563eb"
+    style.font-color: "#1e3a8a"
+    label: "Parse & Extract\nEntries (tokens, cost, model)\nProjects (git remote, path)\nPrompts (text archive)"
+  }
+
+  new_member: New Member? {
+    shape: diamond
+    style.fill: "#93c5fd"
+    style.stroke: "#1d4ed8"
+    style.font-color: "#1e3a8a"
+    label: "New Member?"
+  }
+
+  register_member: Register Member {
+    style.fill: "#bfdbfe"
+    style.stroke: "#3b82f6"
+    style.font-color: "#1e3a8a"
+    label: "Register Member\nCreate member record\n(email → member ID)"
+  }
+
+  batch_push: Batch & Push to Server {
+    style.fill: "#dbeafe"
+    style.stroke: "#2563eb"
+    style.font-color: "#1e3a8a"
+    label: "Batch & Push to Server\nPOST /api/sync\nEntries: 1000/batch\nPrompts: 500/batch"
+  }
+
+  dedup: Deduplicate & Store {
+    style.fill: "#dbeafe"
+    style.stroke: "#2563eb"
+    style.font-color: "#1e3a8a"
+    label: "Deduplicate & Store\nSkip duplicate request_ids\nWrite raw/ to S3\nPre-compute monthly aggregations"
+  }
+
+  coding -> logs: "Claude Code writes"
+  logs -> agent_wake: "read by daemon"
+  agent_wake -> new_entries: "checks state"
+  new_entries -> parse: "Yes — new data found"
+  new_entries -> agent_wake: "No — wait for next interval" {
+    style.stroke: "#94a3b8"
+    style.stroke-dash: 4
+  }
+  parse -> new_member: "check registry"
+  new_member -> register_member: "Yes — first sync"
+  new_member -> batch_push: "No — known member"
+  register_member -> batch_push: "then push"
+  batch_push -> dedup: "server receives"
+}
+
+# ============================================================
+# PHASE 2 — AGGREGATION (Hourly + On-Demand)
+# ============================================================
+
+phase2: Phase 2: Aggregation {
+  style.fill: "#f0fdf4"
+  style.stroke: "#16a34a"
+  style.stroke-width: 3
+  style.font-color: "#14532d"
+  label: "Phase 2: Aggregation\n(Hourly via EventBridge + On-Demand by Admin)"
+
+  trigger: Aggregation Triggered {
+    shape: diamond
+    style.fill: "#bbf7d0"
+    style.stroke: "#15803d"
+    style.font-color: "#14532d"
+    label: "Aggregation Triggered\n(Hourly / Admin force)"
+  }
+
+  read_data: Read All Member Data {
+    style.fill: "#dcfce7"
+    style.stroke: "#16a34a"
+    style.font-color: "#14532d"
+    label: "Read All Member Data\nPre-aggregated monthly summaries\nfrom aggregated/ layer in S3"
+  }
+
+  compute_team: Compute Team View {
+    style.fill: "#dcfce7"
+    style.stroke: "#16a34a"
+    style.font-color: "#14532d"
+    label: "Compute Team View\nTotal cost & trends\nTop users ranking\nModel distribution\nDaily cost trend"
+  }
+
+  compute_members: Compute Members View {
+    style.fill: "#dcfce7"
+    style.stroke: "#16a34a"
+    style.font-color: "#14532d"
+    label: "Compute Members View\nCurrent vs previous month\nRanked member list\nTeam totals"
+  }
+
+  compute_detail: Compute Per-Member Detail {
+    style.fill: "#dcfce7"
+    style.stroke: "#16a34a"
+    style.font-color: "#14532d"
+    label: "Compute Per-Member Detail\nYearly breakdown by day\nModel usage splits\nProject & language activity"
+  }
+
+  write_views: Write Views to S3 {
+    shape: page
+    style.fill: "#bbf7d0"
+    style.stroke: "#22c55e"
+    style.font-color: "#14532d"
+    label: "Write Views to S3\nviews/dashboard.json\nviews/members.json\nviews/members/{id}/{year}.json"
+  }
+
+  trigger -> read_data: "reads aggregated/"
+  read_data -> compute_team: "team-wide stats"
+  read_data -> compute_members: "member comparisons"
+  read_data -> compute_detail: "per-member history"
+  compute_team -> write_views: "dashboard view"
+  compute_members -> write_views: "members view"
+  compute_detail -> write_views: "detail views"
+}
+
+# ============================================================
+# PHASE 3 — DASHBOARD CONSUMPTION (On-Demand)
+# ============================================================
+
+phase3: Phase 3: Dashboard Consumption {
+  style.fill: "#faf5ff"
+  style.stroke: "#9333ea"
+  style.stroke-width: 3
+  style.font-color: "#581c87"
+  label: "Phase 3: Dashboard Consumption\n(On-Demand — when admin or member logs in)"
+
+  login: Login {
+    shape: diamond
+    style.fill: "#e9d5ff"
+    style.stroke: "#7c3aed"
+    style.font-color: "#581c87"
+    label: "Login\n(email + password → JWT)"
+  }
+
+  role_check: Role Check {
+    shape: diamond
+    style.fill: "#ddd6fe"
+    style.stroke: "#7c3aed"
+    style.font-color: "#581c87"
+    label: "Role Check\nadmin / member?"
+  }
+
+  dashboard_home: Dashboard Home {
+    style.fill: "#ede9fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#581c87"
+    label: "Dashboard Home\nTeam cost overview\nTotal · Change % · Avg/member\nDaily trend chart\nCost by member (treemap)\nCost by model (pie)"
+  }
+
+  members_page: Members Page {
+    style.fill: "#ede9fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#581c87"
+    label: "Members Page\nRanked member list\n(by cost or tokens)\nTeam totals bar\nMonth selector"
+  }
+
+  member_detail: Member Detail Panel {
+    style.fill: "#ede9fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#581c87"
+    label: "Member Detail Panel\nUsage heat map (GitHub-style)\nDaily cost trend\nModel distribution (Opus/Sonnet/Haiku)\nDaily tokens by model (stacked)\nFile activity by language\nProject activity (admin only)"
+  }
+
+  admin_view: Admin-Only Views {
+    style.fill: "#ddd6fe"
+    style.stroke: "#7c3aed"
+    style.font-color: "#581c87"
+    label: "Admin-Only Views\nProject activity detail\nAll members' raw data\nSystem status & settings"
+  }
+
+  login -> role_check: "authenticated"
+  role_check -> dashboard_home: "admin or member"
+  role_check -> admin_view: "admin only" {
+    style.stroke: "#7c3aed"
+    style.stroke-dash: 3
+  }
+  dashboard_home -> members_page: "navigate to Members"
+  members_page -> member_detail: "click member → slide-over"
+  member_detail -> admin_view: "project activity tab\n(admin only)" {
+    style.stroke: "#7c3aed"
+    style.stroke-dash: 3
+  }
+}
+
+# ============================================================
+# PHASE 4 — MANAGEMENT ACTIONS (On-Demand)
+# ============================================================
+
+phase4: Phase 4: Management Actions {
+  style.fill: "#fff7ed"
+  style.stroke: "#ea580c"
+  style.stroke-width: 3
+  style.font-color: "#7c2d12"
+  label: "Phase 4: Management Actions\n(On-Demand — admin-initiated)"
+
+  admin_actions: Admin Initiates Action {
+    shape: diamond
+    style.fill: "#fed7aa"
+    style.stroke: "#ea580c"
+    style.font-color: "#7c2d12"
+    label: "Admin Initiates Action"
+  }
+
+  force_aggregate: Force Aggregation {
+    style.fill: "#ffedd5"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "Force Aggregation\nTrigger full data rebuild\nPOST /api/admin/aggregate\n?force=true"
+  }
+
+  send_command: Send Agent Command {
+    style.fill: "#ffedd5"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "Send Agent Command\nrevoke-token\nforce-sync\nStored in commands queue"
+  }
+
+  delete_month: Delete Month Data {
+    style.fill: "#ffedd5"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "Delete Month Data\nReset current month\nfor specific member"
+  }
+
+  agent_poll: Agent Polls Commands {
+    style.fill: "#fed7aa"
+    style.stroke: "#ea580c"
+    style.font-color: "#7c2d12"
+    label: "Agent Polls Commands\nGET /api/agent/commands\n(each sync interval)"
+  }
+
+  agent_execute: Agent Executes Command {
+    style.fill: "#ffedd5"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "Agent Executes Command\nRevoke token / Force sync\nACK to server\nPOST /api/agent/commands/:id/ack"
+  }
+
+  auto_update: Agent Auto-Update {
+    style.fill: "#ffedd5"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "Agent Auto-Update\nCheck /api/agent/version\nDownload from S3 releases\nInstall + re-run setup"
+  }
+
+  admin_actions -> force_aggregate: "rebuild views"
+  admin_actions -> send_command: "remote control agent"
+  admin_actions -> delete_month: "reset data"
+  send_command -> agent_poll: "command queued"
+  agent_poll -> agent_execute: "command found"
+  agent_execute -> agent_poll: "ACK sent, poll again" {
+    style.stroke: "#94a3b8"
+    style.stroke-dash: 4
+  }
+  admin_actions -> auto_update: "new release published" {
+    style.stroke: "#94a3b8"
+    style.stroke-dash: 3
+  }
+  auto_update -> agent_poll: "re-runs as updated agent" {
+    style.stroke: "#94a3b8"
+    style.stroke-dash: 3
+  }
+}
+
+# ============================================================
+# KEY BUSINESS METRICS (Output)
+# ============================================================
+
+metrics: Key Business Metrics {
+  style.fill: "#fefce8"
+  style.stroke: "#ca8a04"
+  style.stroke-width: 2
+  style.font-color: "#713f12"
+  label: "Key Business Metrics"
+
+  cost_metrics: Cost Metrics {
+    style.fill: "#fef9c3"
+    style.stroke: "#eab308"
+    style.font-color: "#713f12"
+    label: "Cost Metrics\nTotal cost (USD) per team / member / day\nMonth-over-month change %\nAverage cost per developer"
+  }
+
+  token_metrics: Token Metrics {
+    style.fill: "#fef9c3"
+    style.stroke: "#eab308"
+    style.font-color: "#713f12"
+    label: "Token Metrics\nInput / Output / Cache tokens\nCache efficiency ratio\n(cache read vs creation)"
+  }
+
+  activity_metrics: Activity Metrics {
+    style.fill: "#fef9c3"
+    style.stroke: "#eab308"
+    style.font-color: "#713f12"
+    label: "Activity Metrics\nModel distribution (Opus/Sonnet/Haiku)\nProject activity (active codebases)\nFile language breakdown (TS, Python, etc.)"
+  }
+}
+
+# ============================================================
+# CROSS-PHASE CONNECTIONS
+# ============================================================
+
+# Actor triggers
+actors.developer -> phase1.coding: "writes code daily" {
+  style.stroke: "#3b82f6"
+  style.stroke-width: 2
+}
+
+actors.system -> phase1.agent_wake: "daemon scheduled\n(launchd / systemd)" {
+  style.stroke: "#64748b"
+  style.stroke-width: 2
+}
+
+actors.system -> phase2.trigger: "EventBridge\nhourly cron" {
+  style.stroke: "#16a34a"
+  style.stroke-width: 2
+}
+
+actors.admin -> phase3.login: "opens dashboard" {
+  style.stroke: "#ea580c"
+  style.stroke-width: 2
+}
+
+actors.admin -> phase4.admin_actions: "takes action\nin Settings panel" {
+  style.stroke: "#ea580c"
+  style.stroke-width: 2
+}
+
+# Phase 1 → Phase 2
+phase1.dedup -> phase2.trigger: "data stored in S3\n(triggers next aggregation cycle)" {
+  style.stroke: "#16a34a"
+  style.stroke-width: 2
+  style.stroke-dash: 3
+}
+
+# Phase 2 → Phase 3
+phase2.write_views -> phase3.login: "pre-computed views\nserved to dashboard" {
+  style.stroke: "#9333ea"
+  style.stroke-width: 2
+  style.stroke-dash: 3
+}
+
+# Phase 3 → Phase 4
+phase3.admin_view -> phase4.admin_actions: "admin triggers\naction from dashboard" {
+  style.stroke: "#ea580c"
+  style.stroke-width: 2
+  style.stroke-dash: 3
+}
+
+# Phase 4 → Phase 2 (force rebuild feedback loop)
+phase4.force_aggregate -> phase2.trigger: "force rebuild\nfeedback loop" {
+  style.stroke: "#16a34a"
+  style.stroke-dash: 4
+}
+
+# Phase 4 → Phase 1 (agent command feedback loop)
+phase4.agent_execute -> phase1.agent_wake: "force-sync command\ntriggers immediate sync" {
+  style.stroke: "#3b82f6"
+  style.stroke-dash: 4
+}
+
+# Metrics output from Phase 3
+phase3.dashboard_home -> metrics.cost_metrics: "displays" {
+  style.stroke: "#ca8a04"
+  style.stroke-dash: 3
+}
+phase3.member_detail -> metrics.token_metrics: "displays" {
+  style.stroke: "#ca8a04"
+  style.stroke-dash: 3
+}
+phase3.member_detail -> metrics.activity_metrics: "displays" {
+  style.stroke: "#ca8a04"
+  style.stroke-dash: 3
+}

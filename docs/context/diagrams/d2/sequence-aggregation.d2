@@ -1,0 +1,30 @@
+aggregation_pipeline: {
+  shape: sequence_diagram
+
+  Trigger
+  LambdaAPI
+  LambdaAggregator
+  S3
+
+  Trigger -> LambdaAPI: "POST /api/admin/aggregate (or EventBridge schedule)"
+  LambdaAPI -> LambdaAggregator: "InvokeCommand (synchronous)"
+  LambdaAggregator -> S3: "GetObject members/index.json (parallel)"
+  LambdaAggregator -> S3: "GetObject meta/last-processed.json (parallel)"
+  S3 -> LambdaAggregator: "Registry + previous meta"
+  LambdaAggregator -> LambdaAggregator: "For each member (concurrency 10)"
+  LambdaAggregator -> S3: "GetObject aggregated/memberId/year-MM.json (x12 months)"
+  LambdaAggregator -> S3: "GetObject projects/memberId.json"
+  LambdaAggregator -> S3: "GetObject prompts/memberId/year-MM.json (x12)"
+  LambdaAggregator -> S3: "GetObject sync-logs/year-MM/memberId.json"
+  S3 -> LambdaAggregator: "All monthly data"
+  LambdaAggregator -> LambdaAggregator: "Generate dashboard view (team-wide)"
+  LambdaAggregator -> S3: "PutObject views/dashboard.json"
+  LambdaAggregator -> LambdaAggregator: "Generate members list view"
+  LambdaAggregator -> S3: "PutObject views/members.json"
+  LambdaAggregator -> LambdaAggregator: "Generate per-member yearly views"
+  LambdaAggregator -> S3: "PutObject views/members/id/year.json (per member)"
+  LambdaAggregator -> LambdaAggregator: "Repeat for previous year if data exists"
+  LambdaAggregator -> S3: "PutObject meta/last-processed.json"
+  LambdaAggregator -> LambdaAPI: "Result with membersProcessed + viewsGenerated"
+  LambdaAPI -> Trigger: "200 OK with result"
+}

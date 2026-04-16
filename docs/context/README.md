@@ -13,8 +13,11 @@ Comprehensive documentation for the CCUsage Monitor system, generated for provid
 | 05 | [API Reference](05-api-reference.md) | All API endpoints grouped by route (sync, dashboard, members, agent, admin, auth, register) |
 | 06 | [Agent Lifecycle](06-agent-lifecycle.md) | Setup, sync cycle, update, command execution, state management, CLI commands |
 | 07 | [Dashboard Architecture](07-dashboard-architecture.md) | Frontend component hierarchy, state management, auth flow, chart components, responsive design |
+| 09 | [Dashboard Widgets (Exhaustive)](09-dashboard-widgets.md) | All 78 widget components: charts, members, shared, UI primitives, data layer, API contracts, ERD, sequences, business flow |
 
 ## Diagrams
+
+### Mermaid Diagrams (Legacy)
 
 All diagrams are generated from Mermaid source files and compiled to SVG.
 
@@ -28,6 +31,23 @@ All diagrams are generated from Mermaid source files and compiled to SVG.
 | 06 | Agent Lifecycle | [SVG](diagrams/06-agent-lifecycle.svg) / [Mermaid](diagrams/06-agent-lifecycle.mmd) |
 | 07 | Dashboard Components | [SVG](diagrams/07-dashboard-components.svg) / [Mermaid](diagrams/07-dashboard-components.mmd) |
 | 08 | Auth Flow | [SVG](diagrams/08-auth-flow.svg) / [Mermaid](diagrams/08-auth-flow.mmd) |
+
+### D2 Diagrams (Dashboard Widgets Scan)
+
+Generated from D2 source files and compiled to SVG using ELK layout engine.
+
+| # | Diagram | Source |
+|---|---------|--------|
+| 01 | Overview Architecture | [SVG](diagrams/svg/overview-architecture.svg) / [D2](diagrams/d2/overview-architecture.d2) |
+| 02 | Infrastructure | [SVG](diagrams/svg/infrastructure.svg) / [D2](diagrams/d2/infrastructure.d2) |
+| 03 | ERD (Entity Relationships) | [SVG](diagrams/svg/erd.svg) / [D2](diagrams/d2/erd.d2) |
+| 04 | Login Sequence | [SVG](diagrams/svg/sequence-login.svg) / [D2](diagrams/d2/sequence-login.d2) |
+| 05 | Dashboard Fetch Sequence | [SVG](diagrams/svg/sequence-dashboard-fetch.svg) / [D2](diagrams/d2/sequence-dashboard-fetch.d2) |
+| 06 | Members List Sequence | [SVG](diagrams/svg/sequence-members-list.svg) / [D2](diagrams/d2/sequence-members-list.d2) |
+| 07 | Agent Sync Sequence | [SVG](diagrams/svg/sequence-agent-sync.svg) / [D2](diagrams/d2/sequence-agent-sync.d2) |
+| 08 | Aggregation Sequence | [SVG](diagrams/svg/sequence-aggregation.svg) / [D2](diagrams/d2/sequence-aggregation.d2) |
+| 09 | Agent Update Sequence | [SVG](diagrams/svg/sequence-agent-update.svg) / [D2](diagrams/d2/sequence-agent-update.d2) |
+| 10 | Business Flow | [SVG](diagrams/svg/business-flow.svg) / [D2](diagrams/d2/business-flow.d2) |
 
 ## Quick Reference
 

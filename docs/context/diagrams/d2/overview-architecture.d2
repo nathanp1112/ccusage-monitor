@@ -1,0 +1,495 @@
+direction: down
+
+vars: {
+  d2-config: {
+    layout-engine: elk
+  }
+}
+
+# ============================================================
+# APP SHELL — Next.js 15 App Router
+# ============================================================
+
+app_shell: App Shell (Next.js 15 App Router) {
+  style.fill: "#dbeafe"
+  style.stroke: "#3b82f6"
+  style.stroke-width: 2
+  style.font-color: "#1e3a8a"
+
+  root_layout: Root Layout (layout.tsx) {
+    style.fill: "#bfdbfe"
+    style.stroke: "#2563eb"
+    style.font-color: "#1e3a8a"
+    label: "Root Layout\n(layout.tsx)\nInter + JetBrains Mono fonts\nAnti-FOUC theme script"
+  }
+
+  providers: Providers (providers.tsx) {
+    style.fill: "#bfdbfe"
+    style.stroke: "#2563eb"
+    style.font-color: "#1e3a8a"
+    label: "Providers\n(providers.tsx)\nTanStack QueryClientProvider\n+ ThemeProvider"
+  }
+
+  auth_group: (auth) Route Group {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+    style.font-color: "#1e3a8a"
+
+    auth_layout: Auth Layout {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "Auth Layout\nMinimal, centered card"
+    }
+
+    login_page: Login Page {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "Login Page (/login)\nemail/password form\n→ useLogin() mutation"
+    }
+  }
+
+  dashboard_group: (dashboard) Route Group {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+    style.font-color: "#1e3a8a"
+
+    dashboard_layout: Dashboard Layout {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "Dashboard Layout\nAuthGuard + Sidebar + Navbar"
+    }
+
+    dashboard_page: Dashboard Page (/) {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "Dashboard Page (/)\nPageHeader + StatsBar\n+ DashboardCharts\n+ DataSheet (recentSyncs)"
+    }
+
+    members_page: Members Page (/members) {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "Members Page (/members)\nPageHeader + ControlsBar\n+ ViewToggle\n+ MemberRankingList | CostTreemapChart"
+    }
+
+    settings_page: Settings Page (/settings) {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "Settings Page\n(/settings)\nAdmin panel"
+    }
+
+    dashboard_charts: DashboardCharts {
+      style.fill: "#dbeafe"
+      style.stroke: "#60a5fa"
+      style.font-color: "#1e3a8a"
+      label: "DashboardCharts\nUsageTrendChart\n| CostTreemapChart\n| ModelDistributionChart"
+    }
+  }
+
+  playground_group: (playground) Route Group {
+    style.fill: "#eff6ff"
+    style.stroke: "#3b82f6"
+    style.font-color: "#1e3a8a"
+    label: "(playground)\nRoute Group\n3D Scenes (Three.js)\nCity · Mascot · Planets\nPodium · Token Rain"
+  }
+
+  root_layout -> providers: "wraps"
+  providers -> auth_group: "provides context"
+  providers -> dashboard_group: "provides context"
+  providers -> playground_group: "provides context"
+  dashboard_group.dashboard_page -> dashboard_group.dashboard_charts: "composes"
+}
+
+# ============================================================
+# FEATURE COMPONENTS
+# ============================================================
+
+feature_components: Feature Components {
+  style.fill: "#dcfce7"
+  style.stroke: "#16a34a"
+  style.stroke-width: 2
+  style.font-color: "#14532d"
+
+  charts: charts/ (11 components) {
+    style.fill: "#bbf7d0"
+    style.stroke: "#22c55e"
+    style.font-color: "#14532d"
+
+    recharts_charts: Recharts-based (9) {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "Recharts-based (9)\nCacheEfficiencyChart\nCostByModelChart\nCostTreemapChart\nDailyModelUsageChart\nFileExtensionChart\nModelDistributionChart\nProjectActivityChart\nTokenUsageChart\nUsageTrendChart"
+    }
+
+    custom_charts: Custom-rendered (2) {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "Custom-rendered (2)\nUsageHeatMap (calendar)\nUsageHeatmap (GitHub-style)"
+    }
+  }
+
+  members: members/ (4 components) {
+    style.fill: "#bbf7d0"
+    style.stroke: "#22c55e"
+    style.font-color: "#14532d"
+
+    member_detail_content: MemberDetailContent {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "MemberDetailContent\nModal with tabs"
+    }
+
+    member_detail_charts: MemberDetailCharts {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "MemberDetailCharts\nCharts for single member"
+    }
+
+    member_ranking_list: MemberRankingList {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "MemberRankingList\nRanked member cards"
+    }
+
+    ranking_bar: RankingBar {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "RankingBar\nSingle rank indicator"
+    }
+  }
+
+  dashboard_comp: dashboard/ (1 component) {
+    style.fill: "#bbf7d0"
+    style.stroke: "#22c55e"
+    style.font-color: "#14532d"
+
+    summary_card: SummaryCard {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "SummaryCard\nStat card with change indicator"
+    }
+  }
+
+  layout_comp: layout/ (3 components) {
+    style.fill: "#bbf7d0"
+    style.stroke: "#22c55e"
+    style.font-color: "#14532d"
+
+    auth_guard: AuthGuard {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "AuthGuard\nRedirects unauthenticated"
+    }
+
+    navbar: Navbar {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "Navbar\nTop bar with user info"
+    }
+
+    sidebar: Sidebar {
+      style.fill: "#d1fae5"
+      style.stroke: "#34d399"
+      style.font-color: "#14532d"
+      label: "Sidebar\nNavigation links"
+    }
+  }
+}
+
+# ============================================================
+# SHARED COMPONENTS
+# ============================================================
+
+shared_components: Shared Components (12) {
+  style.fill: "#fef9c3"
+  style.stroke: "#ca8a04"
+  style.stroke-width: 2
+  style.font-color: "#713f12"
+  label: "Shared Components (12)\nControlsBar · DataSheet · EmptyState\nErrorFallback · ErrorState · LoadingSpinner\nMonthSelector · PageHeader · StatsBar\nStatsGrid · TagList · ViewToggle"
+}
+
+ui_primitives: UI Primitives (Radix-based, 8) {
+  style.fill: "#fef3c7"
+  style.stroke: "#d97706"
+  style.stroke-width: 2
+  style.font-color: "#92400e"
+  label: "UI Primitives (Radix-based, 8)\nBadge · Button · Card\nDropdownMenu · Input · Select\nSheet · Tooltip"
+}
+
+theme: Theme (3) {
+  style.fill: "#fef3c7"
+  style.stroke: "#d97706"
+  style.stroke-width: 2
+  style.font-color: "#92400e"
+  label: "Theme (3)\nThemeProvider · ThemeToggle · index.ts"
+}
+
+# ============================================================
+# DATA LAYER
+# ============================================================
+
+data_layer: Data Layer {
+  style.fill: "#ede9fe"
+  style.stroke: "#7c3aed"
+  style.stroke-width: 2
+  style.font-color: "#3b0764"
+
+  hooks: Hooks (TanStack Query) {
+    style.fill: "#ddd6fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#3b0764"
+
+    use_session: useSession() {
+      style.fill: "#ede9fe"
+      style.stroke: "#a78bfa"
+      style.font-color: "#3b0764"
+      label: "useSession()\n→ GET /api/auth/me"
+    }
+
+    use_login: useLogin() {
+      style.fill: "#ede9fe"
+      style.stroke: "#a78bfa"
+      style.font-color: "#3b0764"
+      label: "useLogin()\n→ POST /api/auth/login"
+    }
+
+    use_logout: useLogout() {
+      style.fill: "#ede9fe"
+      style.stroke: "#a78bfa"
+      style.font-color: "#3b0764"
+      label: "useLogout()\n→ POST /api/auth/logout"
+    }
+
+    use_dashboard: useDashboard() {
+      style.fill: "#ede9fe"
+      style.stroke: "#a78bfa"
+      style.font-color: "#3b0764"
+      label: "useDashboard()\n→ GET /api/dashboard\n→ adaptDashboardResponse()"
+    }
+
+    use_members: useMembers() {
+      style.fill: "#ede9fe"
+      style.stroke: "#a78bfa"
+      style.font-color: "#3b0764"
+      label: "useMembers()\n→ GET /api/members\n→ adaptMembersResponse()"
+    }
+
+    use_member: useMember(id) {
+      style.fill: "#ede9fe"
+      style.stroke: "#a78bfa"
+      style.font-color: "#3b0764"
+      label: "useMember(id)\n→ GET /api/members/:id\n→ adaptMemberDetailResponse()"
+    }
+  }
+
+  api_client: API Client (apiClient singleton) {
+    style.fill: "#ddd6fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#3b0764"
+    label: "API Client (apiClient singleton)\nAuto-attaches Bearer token\n401 → token refresh → retry\nFetch → Next.js rewrite → Lambda API Gateway"
+  }
+
+  api_adapters: API Adapters {
+    style.fill: "#ddd6fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#3b0764"
+    label: "API Adapters\nisLambdaResponse() — detect backend format\nadaptDashboardResponse() → FrontendDashboardData\nadaptMembersResponse() → FrontendMemberListItem[]\nadaptMemberDetailResponse() → FrontendMemberDetailData"
+  }
+
+  utilities: Utilities {
+    style.fill: "#ddd6fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#3b0764"
+    label: "Utilities\ncalculations.ts — calculateTotals, getModelChartData\nmember-utils.ts — sortMembers, calculateRankings\ntreemap-utils.ts — transformToTreemap\nutils.ts — formatCurrency, formatTokens, formatChange, cn"
+  }
+
+  state: State (Zustand) {
+    style.fill: "#ddd6fe"
+    style.stroke: "#8b5cf6"
+    style.font-color: "#3b0764"
+    label: "State (Zustand)\nUIStore\n— sidebarOpen (persisted)\n— dateRange"
+  }
+
+  hooks.use_dashboard -> api_client: "calls"
+  hooks.use_members -> api_client: "calls"
+  hooks.use_member -> api_client: "calls"
+  hooks.use_session -> api_client: "calls"
+  hooks.use_login -> api_client: "calls"
+  hooks.use_logout -> api_client: "calls"
+  api_client -> api_adapters: "response → adapt"
+}
+
+# ============================================================
+# EXTERNAL SYSTEMS
+# ============================================================
+
+external: External Systems {
+  style.fill: "#fff7ed"
+  style.stroke: "#ea580c"
+  style.stroke-width: 2
+  style.font-color: "#7c2d12"
+
+  lambda_api: Lambda API Gateway {
+    style.fill: "#fed7aa"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "Lambda API Gateway\n(Hono on AWS Lambda)\nPOST /api/sync\nGET /api/dashboard\nGET /api/members\nGET /api/auth/*"
+  }
+
+  s3_bucket: S3 Data Bucket {
+    shape: cylinder
+    style.fill: "#fde68a"
+    style.stroke: "#f59e0b"
+    style.font-color: "#78350f"
+    label: "S3 Data Bucket\nraw/ + aggregated/ + views/\nmembers/ + prompts/ + projects/"
+  }
+
+  cloudfront: CloudFront CDN {
+    style.fill: "#fed7aa"
+    style.stroke: "#f97316"
+    style.font-color: "#7c2d12"
+    label: "CloudFront CDN\n→ S3 Dashboard Bucket\n(static hosting)"
+  }
+
+  be_agent: be-agent (local CLI) {
+    style.fill: "#ffedd5"
+    style.stroke: "#fb923c"
+    style.font-color: "#7c2d12"
+    label: "be-agent (local CLI)\nParse JSONL logs\nBatch + push to server"
+  }
+
+  be_agent -> lambda_api: "POST /api/sync\n(entries, projects, prompts)" {
+    style.stroke: "#ea580c"
+    style.stroke-width: 2
+  }
+
+  lambda_api -> s3_bucket: "read / write" {
+    style.stroke: "#f97316"
+    style.stroke-width: 2
+  }
+
+  cloudfront -> s3_bucket: "serves static assets" {
+    style.stroke: "#f59e0b"
+    style.stroke-dash: 4
+  }
+}
+
+# ============================================================
+# INTER-LAYER CONNECTIONS — DATA FLOW
+# ============================================================
+
+# Pages → Hooks
+app_shell.dashboard_group.dashboard_page -> data_layer.hooks.use_dashboard: "uses" {
+  style.stroke: "#7c3aed"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.dashboard_page -> data_layer.hooks.use_session: "uses" {
+  style.stroke: "#7c3aed"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.members_page -> data_layer.hooks.use_members: "uses" {
+  style.stroke: "#7c3aed"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.members_page -> data_layer.hooks.use_member: "uses" {
+  style.stroke: "#7c3aed"
+  style.stroke-dash: 3
+}
+app_shell.auth_group.login_page -> data_layer.hooks.use_login: "uses" {
+  style.stroke: "#7c3aed"
+  style.stroke-dash: 3
+}
+
+# API Client → Lambda (via Next.js rewrite)
+data_layer.api_client -> external.lambda_api: "HTTP requests\n(Bearer token)" {
+  style.stroke: "#7c3aed"
+  style.stroke-width: 2
+}
+
+# Dashboard App → CloudFront (static hosting)
+app_shell -> external.cloudfront: "served from\nS3 + CloudFront" {
+  style.stroke: "#ea580c"
+  style.stroke-dash: 4
+}
+
+# Adapters → State (UIStore influences data range queries)
+data_layer.state -> data_layer.hooks.use_dashboard: "dateRange filter" {
+  style.stroke: "#8b5cf6"
+  style.stroke-dash: 3
+}
+
+# ============================================================
+# INTER-LAYER CONNECTIONS — COMPONENT COMPOSITION
+# ============================================================
+
+# Pages → Feature Components
+app_shell.dashboard_group.dashboard_page -> feature_components.layout_comp.auth_guard: "wrapped by" {
+  style.stroke: "#16a34a"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.dashboard_page -> feature_components.dashboard_comp.summary_card: "renders" {
+  style.stroke: "#16a34a"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.members_page -> feature_components.members.member_ranking_list: "renders" {
+  style.stroke: "#16a34a"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.members_page -> feature_components.members.member_detail_content: "opens modal" {
+  style.stroke: "#16a34a"
+  style.stroke-dash: 3
+}
+feature_components.members.member_detail_content -> feature_components.members.member_detail_charts: "contains" {
+  style.stroke: "#16a34a"
+}
+
+# Feature Components → Charts
+feature_components.members.member_detail_charts -> feature_components.charts.recharts_charts: "uses" {
+  style.stroke: "#16a34a"
+}
+feature_components.members.member_detail_charts -> feature_components.charts.custom_charts: "uses" {
+  style.stroke: "#16a34a"
+}
+app_shell.dashboard_group.dashboard_charts -> feature_components.charts.recharts_charts: "composed from" {
+  style.stroke: "#16a34a"
+}
+
+# Feature Components → Shared
+feature_components.members.member_detail_content -> shared_components: "uses DataSheet, MonthSelector, TagList" {
+  style.stroke: "#ca8a04"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.dashboard_page -> shared_components: "uses PageHeader, StatsBar, DataSheet" {
+  style.stroke: "#ca8a04"
+  style.stroke-dash: 3
+}
+app_shell.dashboard_group.members_page -> shared_components: "uses PageHeader, ControlsBar, ViewToggle, StatsBar" {
+  style.stroke: "#ca8a04"
+  style.stroke-dash: 3
+}
+
+# Shared → UI Primitives
+shared_components -> ui_primitives: "built on" {
+  style.stroke: "#d97706"
+  style.stroke-width: 2
+}
+
+# Theme wraps everything
+app_shell.providers -> theme: "includes ThemeProvider" {
+  style.stroke: "#d97706"
+  style.stroke-dash: 3
+}

@@ -1,0 +1,32 @@
+agent_sync: {
+  shape: sequence_diagram
+
+  JSONL_Files
+  BeAgent
+  APIGateway
+  LambdaAPI
+  S3
+
+  JSONL_Files -> BeAgent: "Read ~/.claude/projects/*.jsonl"
+  BeAgent -> BeAgent: "Parse entries + extract projects + prompts"
+  BeAgent -> BeAgent: "Batch entries (1000/batch), prompts (500/batch)"
+  BeAgent -> APIGateway: "POST /api/sync (gzip compressed)"
+  APIGateway -> LambdaAPI: "Forward (decompress gzip)"
+  LambdaAPI -> LambdaAPI: "Zod validate syncRequestSchema"
+  LambdaAPI -> S3: "GetObject members/index.json (with ETag)"
+  S3 -> LambdaAPI: "MemberRegistry + ETag"
+  LambdaAPI -> LambdaAPI: "resolveAndUpdateMember (create if new)"
+  LambdaAPI -> S3: "PutObject members/index.json (IfMatch ETag, retry on conflict)"
+  LambdaAPI -> LambdaAPI: "Group entries by year-month"
+  LambdaAPI -> S3: "GetObject raw/memberId/year-MM.json (per month, parallel)"
+  S3 -> LambdaAPI: "Existing raw data"
+  LambdaAPI -> LambdaAPI: "Dedup by request_id (skip existing)"
+  LambdaAPI -> S3: "PutObject raw/memberId/year-MM.json (parallel per month)"
+  LambdaAPI -> LambdaAPI: "aggregateMonthData() from raw records"
+  LambdaAPI -> S3: "PutObject aggregated/memberId/year-MM.json (parallel)"
+  LambdaAPI -> S3: "PutObject sync-logs/year-MM/memberId.json"
+  LambdaAPI -> S3: "PutObject projects/memberId.json (if projects provided)"
+  LambdaAPI -> S3: "PutObject prompts/memberId/year-MM.json (if prompts provided)"
+  LambdaAPI -> APIGateway: "Return inserted count + skipped count"
+  APIGateway -> BeAgent: "200 OK"
+}

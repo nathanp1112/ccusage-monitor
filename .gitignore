@@ -55,3 +55,25 @@ _bmad*/
 
 # Auto-generated memory (per-instance)
 memory/
+
+macos-widget/CCUsageWidget/
+
+macos-widget/CCUsageMonitor/
+
+grooming-artifacts/planning-artifacts/diagrams/
+
+macos-widget/CCUsageMonitor.xcodeproj/project.xcworkspace/
+
+macos-widget/CCUsageMonitor.xcodeproj/xcuserdata/duongthao.xcuserdatad/xcschemes/
+
+grooming-artifacts/planning-artifacts/
+
+macos-widget/Shared/
+
+macos-widget/CCUsageMonitor.xcodeproj/project.pbxproj
+
+macos-widget/ExportOptions.plist
+
+macos-widget/project.yml
+
+macos-widget/README.md

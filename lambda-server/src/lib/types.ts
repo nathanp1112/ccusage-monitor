@@ -355,6 +355,26 @@ export interface CommandQueue {
 }
 
 // ============================================
+// Quota Tracking Types (S3 /quota/current.json)
+// ============================================
+
+export interface QuotaEntry {
+  memberId: string;
+  email: string;
+  memberName: string;
+  fiveHourPercent: number;
+  sevenDayPercent: number;
+  fiveHourResetsAt: string | null;
+  sevenDayResetsAt: string | null;
+  updatedAt: string;
+}
+
+export interface QuotaStore {
+  lastUpdated: string;
+  entries: QuotaEntry[];
+}
+
+// ============================================
 // Auth Types
 // ============================================
 

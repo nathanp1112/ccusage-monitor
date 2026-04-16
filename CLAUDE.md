@@ -282,7 +282,8 @@ cd be-agent && pnpm start sync --dry-run
 
 ## Dashboard Login Accounts
 
-Accounts are stored in `lambda-server/src/data/users.json` (SHA256 hashed passwords).
+Accounts are stored per-stage in `lambda-server/src/data/users.{stage}.json` (SHA256 hashed passwords).
+Stage is derived from `BUCKET_NAME` env var at runtime (e.g. `ccusage-data-dev` → loads `users.dev.json`).
 
 | Email | Password | Role |
 |-------|----------|------|

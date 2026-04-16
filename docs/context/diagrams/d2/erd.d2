@@ -1,0 +1,447 @@
+# CCUsage Monitor — Entity-Relationship Diagram
+# Domain-grouped ERD using D2 sql_table shapes
+
+# ─────────────────────────────────────────────
+# AUTHENTICATION DOMAIN
+# ─────────────────────────────────────────────
+Authentication: {
+  style: {
+    fill: "#e8f4f8"
+    stroke: "#2980b9"
+    stroke-width: 2
+    font-color: "#1a5276"
+    bold: true
+  }
+
+  User: {
+    shape: sql_table
+    style: { fill: "#d6eaf8"; stroke: "#2980b9" }
+    name: string
+    email: string
+    role: "'admin' | 'agent' | 'member'"
+  }
+
+  LoginRequest: {
+    shape: sql_table
+    style: { fill: "#d6eaf8"; stroke: "#2980b9" }
+    email: string
+    password: string
+  }
+
+  LoginResponse: {
+    shape: sql_table
+    style: { fill: "#d6eaf8"; stroke: "#2980b9" }
+    success: "true (literal)"
+    accessToken: string
+    refreshToken: string
+    user: "User (ref)"
+  }
+}
+
+# ─────────────────────────────────────────────
+# DASHBOARD DOMAIN
+# ─────────────────────────────────────────────
+Dashboard: {
+  style: {
+    fill: "#fef9e7"
+    stroke: "#d4ac0d"
+    stroke-width: 2
+    font-color: "#7d6608"
+    bold: true
+  }
+
+  FrontendDashboardData: {
+    shape: sql_table
+    style: { fill: "#fef5c7"; stroke: "#d4ac0d" }
+    period_from: string
+    period_to: string
+    summary: "DashboardSummary (ref)"
+    dailyTrend: "DashboardTrend[] (ref)"
+    topUsers: "TopUser[] (ref)"
+    recentSyncs: "RecentSync[] (ref)"
+  }
+
+  DashboardSummary: {
+    shape: sql_table
+    style: { fill: "#fef5c7"; stroke: "#d4ac0d" }
+    totalCost: number
+    costChange: number
+    totalInputTokens: number
+    totalOutputTokens: number
+    totalCacheCreation: number
+    totalCacheRead: number
+    totalRecords: number
+    activeMembers: number
+    totalMembers: number
+    avgCostPerMember: number
+  }
+
+  DashboardTrend: {
+    shape: sql_table
+    style: { fill: "#fef5c7"; stroke: "#d4ac0d" }
+    date: string
+    costUsd: number
+    inputTokens: number
+    outputTokens: number
+  }
+
+  TopUser: {
+    shape: sql_table
+    style: { fill: "#fef5c7"; stroke: "#d4ac0d" }
+    memberId: string
+    name: string
+    costUsd: number
+    inputTokens: number
+    outputTokens: number
+  }
+
+  RecentSync: {
+    shape: sql_table
+    style: { fill: "#fef5c7"; stroke: "#d4ac0d" }
+    id: string
+    memberName: string
+    syncedAt: string
+    recordsInserted: number
+    recordsSkipped: number
+  }
+
+  ModelDistribution: {
+    shape: sql_table
+    style: { fill: "#fef5c7"; stroke: "#d4ac0d" }
+    model: string
+    costUsd: number
+    percentage: number
+  }
+}
+
+# ─────────────────────────────────────────────
+# MEMBER DOMAIN
+# ─────────────────────────────────────────────
+Members: {
+  style: {
+    fill: "#eafaf1"
+    stroke: "#1e8449"
+    stroke-width: 2
+    font-color: "#145a32"
+    bold: true
+  }
+
+  FrontendMemberListItem: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    id: string
+    name: string
+    email: string
+    role: "'admin' | 'member'"
+    isActive: boolean
+    lastSyncAt: "string | null"
+    createdAt: string
+    costUsd: number
+    inputTokens: number
+    outputTokens: number
+    lastSync: "SyncInfo | null (ref)"
+  }
+
+  SyncInfo: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    hostname: string
+    clientIp: string
+    userAgent: string
+    agentVersion: string
+  }
+
+  FrontendMemberDetailData: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    id: string
+    name: string
+    email: string
+    role: "'admin' | 'member'"
+    isActive: boolean
+    lastSyncAt: "string | null"
+    createdAt: string
+    period_year: number
+    period_month: number
+    period_startDate: string
+    period_endDate: string
+    dailyUsage: "FrontendDailyUsageData[] (ref)"
+    projects: "ProjectDataItem[] (ref)"
+    promptStats: "Record<string,{count:number}>"
+  }
+
+  FrontendDailyUsageData: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    date: string
+    inputTokens: number
+    outputTokens: number
+    cacheCreation: number
+    cacheRead: number
+    costUsd: number
+    recordCount: number
+    modelBreakdown: "Record<string, ModelStats>"
+  }
+
+  ModelStats: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    inputTokens: number
+    outputTokens: number
+    cacheCreationTokens: number
+    cacheReadTokens: number
+    costUsd: number
+    recordCount: number
+  }
+
+  ProjectDataItem: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    path: string
+    gitRepo: "string | null"
+    firstSeen: string
+    lastSeen: string
+  }
+
+  RankedMember: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    "...extends": MemberListItem
+    rank: number
+    percentage: number
+  }
+
+  TeamTotals: {
+    shape: sql_table
+    style: { fill: "#d5f5e3"; stroke: "#1e8449" }
+    totalCost: number
+    totalInputTokens: number
+    totalOutputTokens: number
+    activeCount: number
+    totalCount: number
+    avgCostPerMember: number
+  }
+}
+
+# ─────────────────────────────────────────────
+# VISUALIZATION DOMAIN
+# ─────────────────────────────────────────────
+Visualization: {
+  style: {
+    fill: "#f5eef8"
+    stroke: "#7d3c98"
+    stroke-width: 2
+    font-color: "#4a235a"
+    bold: true
+  }
+
+  TreemapData: {
+    shape: sql_table
+    style: { fill: "#e8daef"; stroke: "#7d3c98" }
+    name: string
+    children: "TreemapNode[] (ref)"
+  }
+
+  TreemapNode: {
+    shape: sql_table
+    style: { fill: "#e8daef"; stroke: "#7d3c98" }
+    name: string
+    value: number
+    id: "string (optional)"
+    email: "string (optional)"
+    percentage: "number (optional)"
+  }
+}
+
+# ─────────────────────────────────────────────
+# UI STATE DOMAIN
+# ─────────────────────────────────────────────
+UIState: {
+  style: {
+    fill: "#fdf2e9"
+    stroke: "#ca6f1e"
+    stroke-width: 2
+    font-color: "#784212"
+    bold: true
+  }
+
+  UIStore: {
+    shape: sql_table
+    style: { fill: "#fae5d3"; stroke: "#ca6f1e" }
+    sidebarOpen: boolean
+    dateRange_from: "Date | null"
+    dateRange_to: "Date | null"
+  }
+}
+
+# ─────────────────────────────────────────────
+# S3 STORAGE DOMAIN (Backend)
+# ─────────────────────────────────────────────
+S3Storage: {
+  style: {
+    fill: "#fdfefe"
+    stroke: "#566573"
+    stroke-width: 2
+    font-color: "#2c3e50"
+    bold: true
+  }
+
+  S3_Raw_Entry: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "raw/{memberId}/{year}-{month}.json"
+    description: "Source of truth usage entries"
+    memberId: string
+    year: number
+    month: number
+  }
+
+  S3_Aggregated: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "aggregated/{memberId}/{year}-{month}.json"
+    description: "Pre-computed monthly summaries"
+    memberId: string
+    year: number
+    month: number
+  }
+
+  S3_Members_Index: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "members/index.json"
+    description: "email→id mapping registry"
+  }
+
+  S3_Views_Dashboard: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "views/dashboard.json"
+    description: "Team-wide summary view"
+  }
+
+  S3_Views_Members: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "views/members.json"
+    description: "Member list with current/prev month"
+  }
+
+  S3_Views_MemberYear: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "views/members/{memberId}/{year}.json"
+    description: "Per-member yearly detail"
+    memberId: string
+    year: number
+  }
+
+  S3_Projects: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "projects/{memberId}.json"
+    description: "Project list with git remotes"
+    memberId: string
+  }
+
+  S3_Prompts: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "prompts/{memberId}/{year}-{month}.json"
+    description: "Prompt text archive (ISMS audit)"
+    memberId: string
+    year: number
+    month: number
+  }
+
+  S3_Sync_Logs: {
+    shape: sql_table
+    style: { fill: "#eaecee"; stroke: "#566573" }
+    s3_path: "sync-logs/{year}-{month}/{memberId}.json"
+    description: "Sync audit trail"
+    memberId: string
+    year: number
+    month: number
+  }
+}
+
+# ═══════════════════════════════════════════════════════════
+# RELATIONSHIPS
+# ═══════════════════════════════════════════════════════════
+
+# Authentication → Member
+Authentication.LoginResponse -> Authentication.User: "contains" {
+  style: { stroke: "#2980b9"; stroke-dash: 4 }
+}
+
+# User 1--* MemberListItem
+Authentication.User -> Members.FrontendMemberListItem: "1 to many" {
+  style: { stroke: "#2980b9" }
+}
+
+# Dashboard: FrontendDashboardData → children
+Dashboard.FrontendDashboardData -> Dashboard.DashboardSummary: "1 to 1\nhas summary" {
+  style: { stroke: "#d4ac0d" }
+}
+Dashboard.FrontendDashboardData -> Dashboard.DashboardTrend: "1 to many\ndailyTrend" {
+  style: { stroke: "#d4ac0d" }
+}
+Dashboard.FrontendDashboardData -> Dashboard.TopUser: "1 to many\ntopUsers" {
+  style: { stroke: "#d4ac0d" }
+}
+Dashboard.FrontendDashboardData -> Dashboard.RecentSync: "1 to many\nrecentSyncs" {
+  style: { stroke: "#d4ac0d" }
+}
+
+# Members: FrontendMemberListItem → SyncInfo
+Members.FrontendMemberListItem -> Members.SyncInfo: "1 to 1\nlastSync" {
+  style: { stroke: "#1e8449" }
+}
+
+# Members: FrontendMemberDetailData → children
+Members.FrontendMemberDetailData -> Members.FrontendDailyUsageData: "1 to many\ndailyUsage" {
+  style: { stroke: "#1e8449" }
+}
+Members.FrontendMemberDetailData -> Members.ProjectDataItem: "1 to many\nprojects" {
+  style: { stroke: "#1e8449" }
+}
+
+# FrontendDailyUsageData → ModelStats
+Members.FrontendDailyUsageData -> Members.ModelStats: "1 to many\nmodelBreakdown" {
+  style: { stroke: "#1e8449" }
+}
+
+# RankedMember extends MemberListItem
+Members.RankedMember -> Members.FrontendMemberListItem: "extends" {
+  style: { stroke: "#1e8449"; stroke-dash: 5 }
+}
+
+# Visualization: TreemapData → TreemapNode
+Visualization.TreemapData -> Visualization.TreemapNode: "1 to many\nchildren" {
+  style: { stroke: "#7d3c98" }
+}
+
+# S3 pipeline: raw → aggregated → views
+S3Storage.S3_Raw_Entry -> S3Storage.S3_Aggregated: "aggregation" {
+  style: { stroke: "#566573"; stroke-width: 2 }
+}
+S3Storage.S3_Aggregated -> S3Storage.S3_Views_Dashboard: "view generation" {
+  style: { stroke: "#566573"; stroke-width: 2 }
+}
+S3Storage.S3_Aggregated -> S3Storage.S3_Views_Members: "view generation" {
+  style: { stroke: "#566573"; stroke-width: 2 }
+}
+S3Storage.S3_Aggregated -> S3Storage.S3_Views_MemberYear: "view generation" {
+  style: { stroke: "#566573"; stroke-width: 2 }
+}
+
+# S3 views → Frontend models (API adapter layer)
+S3Storage.S3_Views_Dashboard -> Dashboard.FrontendDashboardData: "API adapter" {
+  style: { stroke: "#e74c3c"; stroke-dash: 6; stroke-width: 2 }
+}
+S3Storage.S3_Views_Members -> Members.FrontendMemberListItem: "API adapter" {
+  style: { stroke: "#e74c3c"; stroke-dash: 6; stroke-width: 2 }
+}
+S3Storage.S3_Views_MemberYear -> Members.FrontendMemberDetailData: "API adapter" {
+  style: { stroke: "#e74c3c"; stroke-dash: 6; stroke-width: 2 }
+}
