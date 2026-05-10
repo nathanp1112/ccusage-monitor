@@ -6,10 +6,11 @@
  * GET /api/members/:id - Get member yearly data (from views/members/{id}/{year}.json)
  */
 
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import {
   getJsonFromS3,
   getMembersViewKey,
+  getMembersByMonthViewKey,
   getMemberDetailViewKey,
   getMemberRegistryKey,
   getRawDataKey,
@@ -48,11 +49,115 @@ function isValidUUID(id: string): boolean {
 }
 
 /**
+ * Parse optional ?year=&month= query params.
+ * Returns:
+ *  - { ok: true, period: null }            → no period filter (use legacy current-month view)
+ *  - { ok: true, period: { year, month } } → valid past/current month
+ *  - { ok: false, error }                  → 400 details
+ */
+function parsePeriodParams(
+  yearParam: string | null,
+  monthParam: string | null
+):
+  | { ok: true; period: { year: number; month: number } | null }
+  | { ok: false; error: string } {
+  if (!yearParam && !monthParam) {
+    return { ok: true, period: null };
+  }
+  if (!yearParam || !monthParam) {
+    return { ok: false, error: 'year and month must be provided together' };
+  }
+
+  // Reject anything that isn't pure digits — `parseInt('2026abc')` silently
+  // returns 2026 and would otherwise pass numeric range checks.
+  const INT_REGEX = /^\d+$/;
+  if (!INT_REGEX.test(yearParam) || !INT_REGEX.test(monthParam)) {
+    return { ok: false, error: 'year and month must be integers' };
+  }
+
+  const year = parseInt(yearParam, 10);
+  const month = parseInt(monthParam, 10);
+  const now = new Date();
+  const currentYear = now.getUTCFullYear();
+  const currentMonth = now.getUTCMonth() + 1;
+
+  if (year < 2024 || year > currentYear) {
+    return { ok: false, error: 'Invalid year parameter' };
+  }
+  if (month < 1 || month > 12) {
+    return { ok: false, error: 'Invalid month parameter' };
+  }
+  if (year === currentYear && month > currentMonth) {
+    return { ok: false, error: 'Requested month is in the future' };
+  }
+  return { ok: true, period: { year, month } };
+}
+
+function isCurrentMonth(year: number, month: number): boolean {
+  const now = new Date();
+  return year === now.getUTCFullYear() && month === now.getUTCMonth() + 1;
+}
+
+function setMonthCacheHeader(c: Context, current: boolean): void {
+  // Past months are immutable views; current month is volatile (re-aggregated hourly).
+  // `private` (not `public`) because the response includes member emails — we don't want
+  // shared caches/CDNs storing per-user PII even though the endpoint is JWT-gated.
+  c.header(
+    'Cache-Control',
+    current ? 'no-cache, must-revalidate' : 'private, max-age=86400'
+  );
+}
+
+/**
  * GET /api/members - List all members with aggregated stats
- * Reads from pre-computed views/members.json
+ *
+ * Default: reads pre-computed views/members.json (current calendar month).
+ * With ?year=&month=: reads views/members-by-month/{year}-{month}.json.
  */
 membersRoute.get('/', async (c) => {
+  const url = new URL(c.req.url);
+  const periodResult = parsePeriodParams(
+    url.searchParams.get('year'),
+    url.searchParams.get('month')
+  );
+
+  if (!periodResult.ok) {
+    return c.json(
+      { success: false, error: periodResult.error, code: 'VALIDATION_ERROR' },
+      400
+    );
+  }
+
   try {
+    const period = periodResult.period;
+
+    // Per-month leaderboard path
+    if (period) {
+      const membersView = await getJsonFromS3<MembersView>(
+        getMembersByMonthViewKey(period.year, period.month)
+      );
+
+      if (!membersView) {
+        return c.json(
+          {
+            success: false,
+            error: 'No data for the requested month',
+            code: 'NOT_FOUND',
+          },
+          404
+        );
+      }
+
+      const filteredView = {
+        ...membersView,
+        members: membersView.members.filter((m) => !isHiddenEmail(m.email)),
+      };
+
+      setMonthCacheHeader(c, isCurrentMonth(period.year, period.month));
+      return c.json({ success: true, data: filteredView });
+    }
+
+    // Legacy current-month path (backward compatible)
     const membersView = await getJsonFromS3<MembersView>(getMembersViewKey());
 
     if (!membersView) {
@@ -107,6 +212,7 @@ membersRoute.get('/', async (c) => {
       members: membersView.members.filter((m) => !isHiddenEmail(m.email)),
     };
 
+    setMonthCacheHeader(c, true); // legacy view is always the current month
     return c.json({
       success: true,
       data: filteredView,

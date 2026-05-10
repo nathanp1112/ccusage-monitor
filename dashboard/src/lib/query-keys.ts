@@ -17,7 +17,10 @@ export const queryKeys = {
   // Members
   members: {
     all: ['members'] as const,
-    list: (filters?: MemberFilters) => ['members', 'list', filters] as const,
+    list: (
+      filters?: MemberFilters,
+      period?: { year: number; month: number }
+    ) => ['members', 'list', filters, period] as const,
     detail: (id: string, year?: number) =>
       year !== undefined
         ? (['members', 'detail', id, year] as const)
@@ -29,6 +32,10 @@ export const queryKeys = {
       ['members', 'detail', id, 'usage', dateRange] as const,
     charts: (id: string, year: number, month: number) =>
       ['members', 'detail', id, 'charts', year, month] as const,
+    promptMonths: (id: string) =>
+      ['members', 'detail', id, 'prompt-months'] as const,
+    prompts: (id: string, year: number, month: number) =>
+      ['members', 'detail', id, 'prompts', year, month] as const,
   },
 
   // Auth

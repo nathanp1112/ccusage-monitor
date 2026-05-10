@@ -6,7 +6,9 @@ import { TagList } from '@/components/shared/tag-list'
 import { ErrorState } from '@/components/shared/error-state'
 import { LoadingSpinner } from '@/components/shared/loading-spinner'
 import { MemberDetailCharts } from './member-detail-charts'
+import { MemberPromptsPanel } from './member-prompts-panel'
 import { useMember } from '@/hooks/use-members'
+import { useSession } from '@/hooks/use-auth'
 import { calculateTotals, getModelsUsed } from '@/lib/calculations'
 import { formatCurrency, formatTokens } from '@/lib/utils'
 
@@ -20,6 +22,8 @@ export function MemberDetailContent({ memberId }: MemberDetailContentProps) {
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth())
 
   const { data: member, isLoading, error, refetch } = useMember(memberId)
+  const { data: session } = useSession()
+  const isAdmin = session?.role === 'admin'
 
   // Calculate totals from daily usage on frontend
   const totals = useMemo(() => {
@@ -89,6 +93,11 @@ export function MemberDetailContent({ memberId }: MemberDetailContentProps) {
         </p>
         <TagList items={modelsUsed} emptyMessage="No models used yet" />
       </div>
+
+      {/* Prompts — admin only */}
+      {isAdmin && (
+        <MemberPromptsPanel memberId={memberId} memberName={member.name} />
+      )}
 
     </div>
   )

@@ -11,20 +11,43 @@ import {
   getJsonFromS3,
   putJsonToS3,
   deleteObjectFromS3,
+  listObjects,
   getCommandQueueKey,
   getMemberRegistryKey,
   getRawDataKey,
   getAggregatedDataKey,
   getMemberDetailViewKey,
+  getPromptsKey,
 } from '../lib/s3.js';
 import type {
   MemberRegistry,
   CommandQueue,
   AgentCommand,
   CommandType,
+  PromptMonthlyData,
 } from '../lib/types.js';
 
 const adminRoute = new Hono();
+
+// UUID v4 validation
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+function isValidUUID(id: string): boolean {
+  return UUID_REGEX.test(id);
+}
+
+/**
+ * Stage derived from BUCKET_NAME (e.g. "ccusage-data-jit" → "jit").
+ * Prompt-browsing endpoints are JIT-only.
+ */
+function getStage(): string {
+  const bucket = process.env.BUCKET_NAME || '';
+  if (bucket.startsWith('ccusage-data-')) return bucket.replace('ccusage-data-', '');
+  return 'dev';
+}
+
+function isPromptViewerEnabled(): boolean {
+  return getStage() === 'jit';
+}
 
 // Lambda client (lazy initialized)
 let lambdaClient: LambdaClient | null = null;
@@ -283,6 +306,204 @@ adminRoute.delete('/month/current', async (c) => {
     errors: errors.length > 0 ? errors : undefined,
     note: 'Run POST /api/admin/aggregate?force=true to rebuild views.',
   });
+});
+
+// ============================================
+// Prompt Browsing Endpoints (admin-only)
+// ============================================
+
+const PROMPT_KEY_REGEX = /^prompts\/[^/]+\/(\d{4})-(\d{2})\.json$/;
+
+/**
+ * GET /api/admin/members/:id/prompts/months
+ * List available prompt months for a member (year/month/count), newest first.
+ */
+adminRoute.get('/members/:id/prompts/months', async (c) => {
+  if (!isPromptViewerEnabled()) {
+    return c.json({ success: false, error: 'Not found', code: 'NOT_FOUND' }, 404);
+  }
+
+  const memberId = c.req.param('id');
+
+  if (!isValidUUID(memberId)) {
+    return c.json(
+      { success: false, error: 'Invalid member ID format', code: 'VALIDATION_ERROR' },
+      400
+    );
+  }
+
+  try {
+    const keys = await listObjects(`prompts/${memberId}/`);
+
+    const parsed = keys
+      .map((key) => {
+        const match = PROMPT_KEY_REGEX.exec(key);
+        if (!match) return null;
+        return { year: parseInt(match[1], 10), month: parseInt(match[2], 10) };
+      })
+      .filter((m): m is { year: number; month: number } => m !== null);
+
+    const months = await Promise.all(
+      parsed.map(async ({ year, month }) => {
+        const data = await getJsonFromS3<PromptMonthlyData>(getPromptsKey(memberId, year, month));
+        return {
+          year,
+          month,
+          count: data?.prompts.length ?? 0,
+          lastUpdated: data?.lastUpdated ?? null,
+        };
+      })
+    );
+
+    months.sort((a, b) => (b.year - a.year) || (b.month - a.month));
+
+    return c.json({ success: true, data: { memberId, months } });
+  } catch (error) {
+    console.error('Prompt months fetch error:', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: 'INTERNAL_ERROR',
+      },
+      500
+    );
+  }
+});
+
+/**
+ * GET /api/admin/members/:id/prompts?year=YYYY&month=MM
+ * Return one month of prompts for a member, grouped by calendar day (UTC).
+ * Days are sorted newest-first; prompts within a day are sorted oldest-first.
+ */
+adminRoute.get('/members/:id/prompts', async (c) => {
+  if (!isPromptViewerEnabled()) {
+    return c.json({ success: false, error: 'Not found', code: 'NOT_FOUND' }, 404);
+  }
+
+  const memberId = c.req.param('id');
+
+  if (!isValidUUID(memberId)) {
+    return c.json(
+      { success: false, error: 'Invalid member ID format', code: 'VALIDATION_ERROR' },
+      400
+    );
+  }
+
+  const url = new URL(c.req.url);
+  const yearParam = url.searchParams.get('year');
+  const monthParam = url.searchParams.get('month');
+  const pageParam = url.searchParams.get('page');
+  const pageSizeParam = url.searchParams.get('pageSize');
+
+  const now = new Date();
+  const year = yearParam ? parseInt(yearParam, 10) : now.getUTCFullYear();
+  const month = monthParam ? parseInt(monthParam, 10) : now.getUTCMonth() + 1;
+
+  if (isNaN(year) || year < 2024 || year > now.getUTCFullYear() + 1) {
+    return c.json(
+      { success: false, error: 'Invalid year parameter', code: 'VALIDATION_ERROR' },
+      400
+    );
+  }
+  if (isNaN(month) || month < 1 || month > 12) {
+    return c.json(
+      { success: false, error: 'Invalid month parameter', code: 'VALIDATION_ERROR' },
+      400
+    );
+  }
+
+  // Pagination (by day). Default 5 days/page keeps response well under the 6MB Lambda limit
+  // even for heavy users (~1000 prompts/day × a few KB each ≈ ~3-4MB).
+  const page = Math.max(1, pageParam ? parseInt(pageParam, 10) || 1 : 1);
+  const pageSize = Math.min(31, Math.max(1, pageSizeParam ? parseInt(pageSizeParam, 10) || 5 : 5));
+
+  // Cap per-prompt content so a single runaway paste can't blow the response budget.
+  const MAX_CONTENT_CHARS = 10_000;
+
+  try {
+    const data = await getJsonFromS3<PromptMonthlyData>(getPromptsKey(memberId, year, month));
+
+    if (!data) {
+      return c.json({
+        success: true,
+        data: {
+          memberId,
+          year,
+          month,
+          totalPrompts: 0,
+          totalDays: 0,
+          page,
+          pageSize,
+          hasMore: false,
+          days: [],
+        },
+      });
+    }
+
+    const byDate = new Map<string, PromptMonthlyData['prompts']>();
+    for (const p of data.prompts) {
+      const date = p.timestamp.slice(0, 10); // YYYY-MM-DD (UTC)
+      const list = byDate.get(date) ?? [];
+      list.push(p);
+      byDate.set(date, list);
+    }
+
+    // Sort day keys newest-first, then slice for pagination before materializing prompts.
+    const allDateKeys = Array.from(byDate.keys()).sort((a, b) => b.localeCompare(a));
+    const totalDays = allDateKeys.length;
+    const start = (page - 1) * pageSize;
+    const pagedKeys = allDateKeys.slice(start, start + pageSize);
+
+    const days = pagedKeys.map((date) => {
+      const prompts = byDate.get(date)!;
+      return {
+        date,
+        count: prompts.length,
+        prompts: prompts
+          .slice()
+          .sort((a, b) => a.timestamp.localeCompare(b.timestamp))
+          .map((p) => {
+            const truncated = p.content.length > MAX_CONTENT_CHARS;
+            return {
+              uuid: p.uuid,
+              timestamp: p.timestamp,
+              sessionId: p.sessionId,
+              projectPath: p.projectPath,
+              cwd: p.cwd,
+              content: truncated ? p.content.slice(0, MAX_CONTENT_CHARS) : p.content,
+              truncated: truncated || undefined,
+              originalLength: truncated ? p.content.length : undefined,
+            };
+          }),
+      };
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        memberId,
+        year,
+        month,
+        totalPrompts: data.prompts.length,
+        totalDays,
+        page,
+        pageSize,
+        hasMore: start + pagedKeys.length < totalDays,
+        days,
+      },
+    });
+  } catch (error) {
+    console.error('Prompts fetch error:', error);
+    return c.json(
+      {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        code: 'INTERNAL_ERROR',
+      },
+      500
+    );
+  }
 });
 
 export default adminRoute;

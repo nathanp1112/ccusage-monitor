@@ -156,17 +156,34 @@ interface LambdaMembersResponse {
 }
 
 /**
- * Hook for fetching members list
- * Supports both legacy PostgreSQL API and new Lambda API formats
+ * Period for the per-month leaderboard. `month` is 1-indexed (1-12).
  */
-export function useMembers(filters?: MemberFilters) {
+export interface MembersListPeriod {
+  year: number
+  month: number
+}
+
+/**
+ * Hook for fetching members list
+ * Supports both legacy PostgreSQL API and new Lambda API formats.
+ * When `period` is provided, calls /api/members?year=&month= for a per-month
+ * leaderboard. The Lambda returns 404 for months with no data — apiClient
+ * throws, and the caller renders an empty state.
+ */
+export function useMembers(
+  filters?: MemberFilters,
+  period?: MembersListPeriod
+) {
   return useQuery({
-    queryKey: queryKeys.members.list(filters),
+    queryKey: queryKeys.members.list(filters, period),
     queryFn: async () => {
+      const periodParams = period
+        ? { year: String(period.year), month: String(period.month) }
+        : undefined
       const response = await apiClient.get<
         { success: boolean; data: MemberListItem[] } | LambdaMembersResponse
       >('/api/members', {
-        params: filtersToParams(filters),
+        params: { ...filtersToParams(filters), ...periodParams },
       })
 
       // Check if this is Lambda API response (has generatedAt in data)
@@ -270,6 +287,100 @@ export function useMember(id: string, year?: number) {
       return (response as { success: boolean; data: MemberDetailData }).data
     },
     enabled: !!id,
+  })
+}
+
+/**
+ * Prompt month summary returned by /api/admin/members/:id/prompts/months
+ */
+export interface PromptMonthSummary {
+  year: number
+  month: number
+  count: number
+  lastUpdated: string | null
+}
+
+interface PromptMonthsResponse {
+  success: boolean
+  data: {
+    memberId: string
+    months: PromptMonthSummary[]
+  }
+}
+
+/**
+ * Single prompt in the admin prompt browser
+ */
+export interface PromptRecord {
+  uuid: string
+  timestamp: string
+  sessionId: string
+  projectPath: string
+  cwd: string
+  content: string
+  truncated?: boolean
+  originalLength?: number
+}
+
+export interface PromptDay {
+  date: string // YYYY-MM-DD
+  count: number
+  prompts: PromptRecord[]
+}
+
+interface PromptsMonthResponse {
+  success: boolean
+  data: {
+    memberId: string
+    year: number
+    month: number
+    totalPrompts: number
+    totalDays: number
+    page: number
+    pageSize: number
+    hasMore: boolean
+    days: PromptDay[]
+  }
+}
+
+/**
+ * Admin-only: list the months for which a member has prompts in S3.
+ * Caller MUST ensure the current user has admin role before enabling.
+ */
+export function useMemberPromptMonths(id: string, enabled: boolean = true) {
+  return useQuery({
+    queryKey: queryKeys.members.promptMonths(id),
+    queryFn: async () => {
+      const response = await apiClient.get<PromptMonthsResponse>(
+        `/api/admin/members/${id}/prompts/months`
+      )
+      return response.data
+    },
+    enabled: !!id && enabled,
+  })
+}
+
+/**
+ * Admin-only: fetch prompts for a member for a given month, grouped by day.
+ */
+export function useMemberPrompts(
+  id: string,
+  year: number,
+  month: number,
+  page: number = 1,
+  pageSize: number = 5,
+  enabled: boolean = true
+) {
+  return useQuery({
+    queryKey: [...queryKeys.members.prompts(id, year, month), page, pageSize],
+    queryFn: async () => {
+      const response = await apiClient.get<PromptsMonthResponse>(
+        `/api/admin/members/${id}/prompts`,
+        { params: { year, month, page, pageSize } }
+      )
+      return response.data
+    },
+    enabled: !!id && enabled && !!year && !!month,
   })
 }
 

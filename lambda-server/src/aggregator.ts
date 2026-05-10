@@ -21,6 +21,7 @@ import {
   getSyncLogKey,
   getDashboardViewKey,
   getMembersViewKey,
+  getMembersByMonthViewKey,
   getMemberDetailViewKey,
   getMetaKey,
   getProjectsKey,
@@ -526,6 +527,158 @@ function generateMembersView(memberDataList: MemberAggregatedData[]): MembersVie
   };
 }
 
+// ============================================
+// Per-Month Members View
+// ============================================
+
+// Factory rather than a shared singleton — prevents accidental mutation of a
+// reused fallback object from corrupting subsequent lookups.
+function makeZeroMonthAgg(year: number, month: number): MonthAggregation {
+  return {
+    year,
+    month,
+    totals: {
+      inputTokens: 0,
+      outputTokens: 0,
+      cacheCreationTokens: 0,
+      cacheReadTokens: 0,
+      costUsd: 0,
+      recordCount: 0,
+    },
+    dailyUsage: [],
+    dailyModelUsage: [],
+    modelBreakdown: {},
+    projectBreakdown: {},
+    extensionBreakdown: {},
+  };
+}
+
+function getPriorYearMonth(year: number, month: number): { year: number; month: number } {
+  if (month === 1) return { year: year - 1, month: 12 };
+  return { year, month: month - 1 };
+}
+
+/**
+ * Look up a member's MonthAggregation for the given (year, month).
+ * Falls back to a zero-filled aggregation when the year is outside the
+ * data we already loaded or the member has no data for that slice.
+ */
+function lookupMonthAggregation(
+  memberId: string,
+  year: number,
+  month: number,
+  currentYear: number,
+  previousYear: number,
+  currentYearData: MemberAggregatedData[],
+  prevYearData: MemberAggregatedData[]
+): MonthAggregation {
+  const source =
+    year === currentYear
+      ? currentYearData
+      : year === previousYear
+      ? prevYearData
+      : null;
+  if (!source) return makeZeroMonthAgg(year, month);
+
+  const data = source.find((d) => d.memberId === memberId);
+  return data?.monthlyAggregations[String(month)] ?? makeZeroMonthAgg(year, month);
+}
+
+/**
+ * Generate a MembersView ranked by costUsd for a specific (year, month).
+ * Response shape is identical to generateMembersView so the same dashboard
+ * adapter can render either snapshot.
+ *
+ * Returns null when no member has any recorded usage for the target month —
+ * the caller skips writing the file in that case.
+ */
+function generateMembersViewForMonth(
+  targetYear: number,
+  targetMonth: number,
+  currentYear: number,
+  previousYear: number,
+  currentYearData: MemberAggregatedData[],
+  prevYearData: MemberAggregatedData[]
+): MembersView | null {
+  const { year: prevYear, month: prevMonth } = getPriorYearMonth(targetYear, targetMonth);
+  const allMembers: MemberAggregatedData[] =
+    targetYear === currentYear ? currentYearData : prevYearData;
+
+  let teamCostUsd = 0;
+  let teamInputTokens = 0;
+  let teamOutputTokens = 0;
+  let hasAnyData = false;
+
+  const members = allMembers.map((memberData) => {
+    const targetAgg = lookupMonthAggregation(
+      memberData.memberId,
+      targetYear,
+      targetMonth,
+      currentYear,
+      previousYear,
+      currentYearData,
+      prevYearData
+    );
+    const priorAgg = lookupMonthAggregation(
+      memberData.memberId,
+      prevYear,
+      prevMonth,
+      currentYear,
+      previousYear,
+      currentYearData,
+      prevYearData
+    );
+
+    const target = targetAgg.totals;
+    const prior = priorAgg.totals;
+
+    if (target.recordCount > 0) hasAnyData = true;
+
+    teamCostUsd = addCost(teamCostUsd, target.costUsd);
+    teamInputTokens += target.inputTokens;
+    teamOutputTokens += target.outputTokens;
+
+    const costChangePercent =
+      prior.costUsd > 0
+        ? ((target.costUsd - prior.costUsd) / prior.costUsd) * 100
+        : 0;
+
+    return {
+      id: memberData.memberId,
+      name: memberData.memberInfo.name,
+      email: memberData.memberInfo.email,
+      role: memberData.memberInfo.role,
+      isActive: memberData.memberInfo.isActive,
+      lastSyncAt: memberData.memberInfo.lastSyncAt,
+      currentMonth: {
+        costUsd: target.costUsd,
+        inputTokens: target.inputTokens,
+        outputTokens: target.outputTokens,
+      },
+      previousMonth: {
+        costUsd: prior.costUsd,
+        inputTokens: prior.inputTokens,
+        outputTokens: prior.outputTokens,
+      },
+      costChangePercent,
+    };
+  });
+
+  if (!hasAnyData) return null;
+
+  members.sort((a, b) => b.currentMonth.costUsd - a.currentMonth.costUsd);
+
+  return {
+    generatedAt: new Date().toISOString(),
+    teamTotals: {
+      costUsd: teamCostUsd,
+      inputTokens: teamInputTokens,
+      outputTokens: teamOutputTokens,
+    },
+    members,
+  };
+}
+
 function generateMemberYearlyView(memberData: MemberAggregatedData): MemberYearlyView {
   const now = new Date().toISOString();
 
@@ -705,6 +858,46 @@ export const handler = async (
       }
       console.log(`Generated member yearly views for ${previousYear}`)
     }
+
+    // Generate per-month members leaderboard views for current + previous year.
+    // Skips months where no member has recorded usage; route returns 404 in that case.
+    const monthSlices: Array<{ year: number; month: number }> = [];
+    for (const year of [previousYear, currentYear]) {
+      if (year < 2024) continue;
+      for (let month = 1; month <= 12; month++) {
+        monthSlices.push({ year, month });
+      }
+    }
+
+    const perMonthResults = await mapWithConcurrency(
+      monthSlices,
+      async ({ year, month }) => {
+        const view = generateMembersViewForMonth(
+          year,
+          month,
+          currentYear,
+          previousYear,
+          memberDataList,
+          prevYearMemberData
+        );
+        if (!view) return null;
+        const key = getMembersByMonthViewKey(year, month);
+        await putJsonToS3(key, view);
+        return key;
+      },
+      LIMITS.S3_CONCURRENCY
+    );
+
+    let perMonthCount = 0;
+    for (const key of perMonthResults) {
+      if (key) {
+        viewsGenerated.push(key);
+        perMonthCount++;
+      }
+    }
+    console.log(
+      `Generated ${perMonthCount}/${monthSlices.length} per-month members views`
+    );
 
     // 4. Collect processed months per member (only months changed since last run)
     // First run (no meta): all months with data. Subsequent runs: only months with new data.

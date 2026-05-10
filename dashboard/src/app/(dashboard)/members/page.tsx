@@ -9,9 +9,11 @@ import { EmptyState } from '@/components/shared/empty-state'
 import { ErrorState } from '@/components/shared/error-state'
 import { DataSheet } from '@/components/shared/data-sheet'
 import { ViewToggle, type ViewOption } from '@/components/shared/view-toggle'
+import { PeriodSelector } from '@/components/shared/period-selector'
 import { MemberRankingList } from '@/components/members/member-ranking-list'
 import { MemberDetailContent } from '@/components/members/member-detail-content'
 import { CostTreemapChart } from '@/components/charts/cost-treemap-chart'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import {
   Select,
   SelectContent,
@@ -20,6 +22,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { formatCurrency, formatTokens } from '@/lib/utils'
+import { ApiError } from '@/lib/api-client'
 import { useMembers } from '@/hooks/use-members'
 import { calculateRankings, calculateTeamTotals } from '@/lib/member-utils'
 import { transformToTreemap, type TreemapMetric } from '@/lib/treemap-utils'
@@ -38,7 +41,35 @@ const sortOptions: { value: MemberSortField; label: string }[] = [
 ]
 
 export default function MembersPage() {
-  const { data: members, isLoading, error, refetch } = useMembers()
+  const now = useMemo(() => new Date(), [])
+  // Period for the leaderboard. Default = current month. Undefined means
+  // "current month" (legacy path); we always send a period for clarity.
+  const [selectedYear, setSelectedYear] = useState(now.getFullYear())
+  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1)
+
+  // When the user picks a new year, snap the month back to the current month
+  // if the existing selection would be in the future for that year (BE rejects
+  // future months with 400). Without this, switching from e.g. (2025, Jun) to
+  // 2026 leaves (2026, Jun) — invalid until the user manually picks again.
+  const handleYearChange = (year: number) => {
+    setSelectedYear(year)
+    if (year === now.getFullYear() && selectedMonth > now.getMonth() + 1) {
+      setSelectedMonth(now.getMonth() + 1)
+    }
+  }
+
+  const period = useMemo(
+    () => ({ year: selectedYear, month: selectedMonth }),
+    [selectedYear, selectedMonth]
+  )
+
+  const isCurrentPeriod =
+    selectedYear === now.getFullYear() && selectedMonth === now.getMonth() + 1
+
+  const { data: members, isLoading, error, refetch } = useMembers(undefined, period)
+
+  // Treat 404 (no data for that month) as a friendly empty state, not an error.
+  const isNoDataMonth = error instanceof ApiError && error.isNotFound
 
   const [view, setView] = useState<MembersViewType>('ranking')
   const [sortField, setSortField] = useState<MemberSortField>('costUsd')
@@ -105,45 +136,68 @@ export default function MembersPage() {
     { label: 'Avg', value: formatCurrency(teamTotals.avgCostPerMember), hideOnTablet: true },
   ]
 
-  if (isLoading) {
-    return <PageLoader />
-  }
+  const periodLabel = new Date(selectedYear, selectedMonth - 1).toLocaleDateString(
+    'en-US',
+    { year: 'numeric', month: 'long' }
+  )
 
-  if (error) {
-    return <ErrorState message="Failed to load members" onRetry={refetch} />
-  }
+  const hasError = !!error && !isNoDataMonth
 
   return (
     <div className="space-y-4">
-      <PageHeader title="Members" description="View usage details for team members" />
-
-      <StatsBar stats={stats} />
-
-      <ControlsBar
-        left={
-          <ViewToggle options={viewOptions} value={view} onChange={setView} />
-        }
-        right={
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Sort by:</span>
-            <Select value={sortField} onValueChange={(v) => setSortField(v as MemberSortField)}>
-              <SelectTrigger className="w-[140px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {sortOptions.map((opt) => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        }
+      <PageHeader
+        title="Members"
+        description={`Leaderboard for ${periodLabel}${isCurrentPeriod ? ' (current month)' : ''}`}
       />
 
-      {/* Content based on view */}
-      {view === 'ranking' && (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">Period Selection</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <PeriodSelector
+            year={selectedYear}
+            month={selectedMonth}
+            onYearChange={handleYearChange}
+            onMonthChange={setSelectedMonth}
+          />
+        </CardContent>
+      </Card>
+
+      {!hasError && <StatsBar stats={stats} />}
+
+      {!hasError && (
+        <ControlsBar
+          left={
+            <ViewToggle options={viewOptions} value={view} onChange={setView} />
+          }
+          right={
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">Sort by:</span>
+              <Select value={sortField} onValueChange={(v) => setSortField(v as MemberSortField)}>
+                <SelectTrigger className="w-[140px]">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {sortOptions.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          }
+        />
+      )}
+
+      {hasError && (
+        <ErrorState message="Failed to load members" onRetry={refetch} />
+      )}
+
+      {!hasError && isLoading && <PageLoader />}
+
+      {!hasError && !isLoading && !isNoDataMonth && view === 'ranking' && (
         <MemberRankingList
           members={rankedMembers}
           sortField={sortField}
@@ -151,7 +205,7 @@ export default function MembersPage() {
         />
       )}
 
-      {view === 'chart' && (
+      {!hasError && !isLoading && !isNoDataMonth && view === 'chart' && (
         <CostTreemapChart
           data={treemapData}
           metric={treemapMetric}
@@ -162,8 +216,14 @@ export default function MembersPage() {
         />
       )}
 
-      {(!members || members.length === 0) && (
-        <EmptyState message="No members found" />
+      {!hasError && !isLoading && (isNoDataMonth || !members || members.length === 0) && (
+        <EmptyState
+          message={
+            isNoDataMonth
+              ? `No usage data for ${periodLabel}`
+              : 'No members found'
+          }
+        />
       )}
 
       {/* Member Detail Modal */}

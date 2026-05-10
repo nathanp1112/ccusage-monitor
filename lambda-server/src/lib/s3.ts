@@ -245,6 +245,15 @@ export function getMembersViewKey(): string {
 }
 
 /**
+ * Get S3 key for per-month members view (leaderboard for a specific month)
+ * Format: views/members-by-month/{year}-{month}.json
+ */
+export function getMembersByMonthViewKey(year: number, month: number): string {
+  const monthStr = month.toString().padStart(2, '0');
+  return `views/members-by-month/${year}-${monthStr}.json`;
+}
+
+/**
  * Get S3 key for member detail view
  * Format: views/members/{memberId}/{year}.json
  */
